@@ -9,6 +9,11 @@ agent_created: true
 Executa três camadas de defesa sobre o código do próprio usuário e entrega um relatório unificado.
 Todas as ferramentas são gratuitas, portáteis e rodam offline após a primeira execução.
 
+Este arquivo segue o formato de skill (frontmatter com `name` e `description`) lido por Claude
+Code e WorkBuddy. Agentes que usam a convenção `AGENTS.md` encontram instruções equivalentes
+em `AGENTS.md`, na raiz deste diretório. O núcleo é o `secscan.py`, que é um CLI comum e não
+depende de agente nenhum.
+
 ## Antes de rodar: checar a instalação
 
 O diretório desta skill deve conter `secscan.py`, `bin/` e `.venv/`. Verificar:

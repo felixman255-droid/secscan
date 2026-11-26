@@ -30,6 +30,33 @@ Três camadas — segredos, dependências e código-fonte — num único relató
 
 Todas gratuitas. Depois da primeira execução, rodam offline.
 
+## Compatibilidade com agentes
+
+O núcleo (`secscan.py`) é um CLI comum — roda sozinho, sem agente nenhum, e é o que faz o
+trabalho de verdade.
+
+Para usar **como instrução de agente**, o repositório traz os dois formatos que existem hoje:
+
+| Arquivo | Formato | Agentes |
+|---|---|---|
+| `SKILL.md` | skill com frontmatter (`name` + `description`) | Claude Code, WorkBuddy, e qualquer agente que leia `SKILL.md` |
+| `AGENTS.md` | instruções em Markdown puro | Codex, Cursor, Jules, Amp, Zed, Gemini CLI |
+
+O `SKILL.md` serve para Claude Code e WorkBuddy **sem alteração** — o formato é o mesmo. Campos
+extras no frontmatter são ignorados por quem não os conhece, então nada quebra.
+
+Instalar como skill (Claude Code):
+
+```bash
+git clone https://github.com/felixman255-droid/secscan.git ~/.claude/skills/secscan
+```
+
+Por projeto, em vez de global: clonar em `.claude/skills/secscan` na raiz do repositório.
+Depois rodar o instalador uma vez dentro da pasta clonada.
+
+Para agentes que usam `AGENTS.md`, basta clonar na raiz do projeto — ou apontar a regra do
+agente para o arquivo.
+
 ## Instalação
 
 **Windows:**

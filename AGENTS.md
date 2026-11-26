@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Instruções para agentes de código que seguem a convenção `AGENTS.md`
-(Codex, Cursor, Jules, Amp, Zed, Gemini CLI e afins).
+(Codex, Cursor, Jules, Amp, Zed e afins).
 
 ## O que é este repositório
 

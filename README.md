@@ -40,7 +40,7 @@ Para usar **como instrução de agente**, o repositório traz os dois formatos q
 | Arquivo | Formato | Agentes |
 |---|---|---|
 | `SKILL.md` | skill com frontmatter (`name` + `description`) | Claude Code, WorkBuddy, e qualquer agente que leia `SKILL.md` |
-| `AGENTS.md` | instruções em Markdown puro | Codex, Cursor, Jules, Amp, Zed, Gemini CLI |
+| `AGENTS.md` | instruções em Markdown puro | Codex, Cursor, Jules, Amp, Zed e demais leitores de `AGENTS.md` |
 
 O `SKILL.md` serve para Claude Code e WorkBuddy **sem alteração** — o formato é o mesmo. Campos
 extras no frontmatter são ignorados por quem não os conhece, então nada quebra.

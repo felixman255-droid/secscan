@@ -1,0 +1,6 @@
+.venv/
+bin/
+security-report/
+__pycache__/
+*.pyc
+.DS_Store

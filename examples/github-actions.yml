@@ -38,12 +38,19 @@ jobs:
           path: |
             .secscan/bin
             .secscan/.venv
-          key: secscan-${{ runner.os }}-v1
+          # Bumpar esta chave ao adicionar/trocar ferramenta: um cache antigo
+          # restaura .venv e o passo de instalacao e pulado, deixando o
+          # binario novo faltando. v2 = trivy incluido.
+          key: secscan-${{ runner.os }}-v2
 
       - name: Instalar secscan
         run: |
           git clone --depth 1 "$SECSCAN_REPO" "$SECSCAN_DIR"
-          if [ ! -d "$SECSCAN_DIR/.venv" ]; then bash "$SECSCAN_DIR/install.sh"; fi
+          # Testar o binario mais novo, nao so o venv: cache parcial deixaria
+          # a instalacao ser pulada com uma ferramenta faltando.
+          if [ ! -x "$SECSCAN_DIR/bin/trivy" ] || [ ! -d "$SECSCAN_DIR/.venv" ]; then
+            bash "$SECSCAN_DIR/install.sh"
+          fi
 
       - name: Varredura
         id: scan

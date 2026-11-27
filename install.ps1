@@ -16,6 +16,7 @@ $osvArch = if ($arm) { "arm64" } else { "amd64" }
 # Trocar de versao exige revalidar o parsing: python -m unittest discover -s tests
 $glVer  = "8.30.1"
 $osvVer = "2.7.1"
+$trvVer = "0.76.2"
 
 $glSha = @{
   "x64"   = "d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e"
@@ -24,6 +25,9 @@ $glSha = @{
 $osvSha = @{
   "amd64" = "7121dcf420aefbbf89a7f0050c4d3094e079ff93afd334dfc96f16b02ec85800"
   "arm64" = "5f3998b55c9268f8468502bbcb60645038fd5b145ee5e685e6ae2a32e923afc7"
+}
+$trvSha = @{
+  "64bit" = "691f737a7e5566a673c3a74dab9160552ec32101e953b659e5c77443d16dddb6"
 }
 
 function Assert-Hash($path, $expected, $label) {
@@ -50,6 +54,14 @@ Invoke-WebRequest -UseBasicParsing -OutFile $osvPath `
   "https://github.com/google/osv-scanner/releases/download/v$osvVer/osv-scanner_windows_${osvArch}.exe"
 Assert-Hash $osvPath $osvSha[$osvArch] "osv-scanner"
 
+Write-Host "> trivy $trvVer (64bit)"
+$trvZip = Join-Path $tmp "trivy.zip"
+Invoke-WebRequest -UseBasicParsing -OutFile $trvZip `
+  "https://github.com/aquasecurity/trivy/releases/download/v$trvVer/trivy_${trvVer}_windows-64bit.zip"
+Assert-Hash $trvZip $trvSha["64bit"] "trivy"
+Expand-Archive -Path $trvZip -DestinationPath $tmp -Force
+Move-Item -Force (Join-Path $tmp "trivy.exe") (Join-Path $bin "trivy.exe")
+
 Write-Host "> semgrep (venv isolado)"
 & python -m venv (Join-Path $here ".venv")
 $py = Join-Path $here ".venv\Scripts\python.exe"
@@ -71,4 +83,5 @@ Write-Host ""
 Write-Host "Instalado em: $here"
 & (Join-Path $bin "gitleaks.exe") version
 & (Join-Path $bin "osv-scanner.exe") --version | Select-Object -First 1
+& (Join-Path $bin "trivy.exe") --version | Select-Object -First 1
 & $semgrep --version

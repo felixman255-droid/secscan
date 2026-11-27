@@ -352,7 +352,7 @@ class TestSarif(unittest.TestCase):
         doc = s.build_sarif(findings, {"target": ".", "name": "x", "when": "", "tools": []})
         self.assertEqual(doc["version"], "2.1.0")
         self.assertIn("$schema", doc)
-        self.assertEqual(len(doc["runs"]), 3)
+        self.assertEqual(len(doc["runs"]), len(s.TOOLS))
         for run in doc["runs"]:
             self.assertIn("driver", run["tool"])
             self.assertIn("results", run)
@@ -471,6 +471,126 @@ class TestPruneReports(unittest.TestCase):
             self._mk(root, "2026-01-02_10-00-00", sensitive=True)
             s.prune_reports(root, keep=0)
             self.assertEqual(len(list(root.iterdir())), 2)
+
+
+class TestTrivy(unittest.TestCase):
+    def _data(self, *misconfs, target="Dockerfile"):
+        return {"Results": [{"Target": target, "Class": "config",
+                             "Type": "dockerfile",
+                             "Misconfigurations": list(misconfs)}]}
+
+    def _m(self, mid="DS-0002", sev="HIGH", status="FAIL", line=4,
+           title="Image user should not be 'root'"):
+        m = {"ID": mid, "Severity": sev, "Status": status, "Title": title,
+             "Message": "Last USER command in Dockerfile should not be 'root'"}
+        if line is not None:
+            m["CauseMetadata"] = {"StartLine": line, "EndLine": line}
+        return m
+
+    def test_parses_fail_entries(self):
+        out = s.parse_trivy(self._data(self._m()))
+        self.assertEqual(len(out), 1)
+        f = out[0]
+        self.assertEqual(f["tool"], "trivy")
+        self.assertEqual(f["path"], "Dockerfile")
+        self.assertEqual(f["line"], 4)
+        self.assertEqual(f["rule"], "DS-0002")
+        self.assertEqual(f["sev"], "ALTA")
+        self.assertIn("DS-0002", f["title"])
+
+    def test_pass_entries_are_skipped(self):
+        out = s.parse_trivy(self._data(self._m(status="PASS")))
+        self.assertEqual(out, [])
+
+    def test_missing_start_line_yields_none(self):
+        out = s.parse_trivy(self._data(self._m(line=None)))
+        self.assertIsNone(out[0]["line"])
+
+    def test_severity_mapping(self):
+        for raw, want in (("CRITICAL", "CRÍTICA"), ("HIGH", "ALTA"),
+                          ("MEDIUM", "MÉDIA"), ("LOW", "BAIXA")):
+            out = s.parse_trivy(self._data(self._m(sev=raw)))
+            self.assertEqual(out[0]["sev"], want, raw)
+
+    def test_unknown_severity_falls_back_to_media(self):
+        out = s.parse_trivy(self._data(self._m(sev="WEIRD")))
+        self.assertEqual(out[0]["sev"], "MÉDIA")
+
+    def test_empty_results_is_clean(self):
+        self.assertEqual(s.parse_trivy({"Results": []}), [])
+
+    def test_missing_results_key_raises(self):
+        with self.assertRaises(s.ScanError):
+            s.parse_trivy({"SchemaVersion": 2})
+
+    def test_toplevel_list_raises(self):
+        with self.assertRaises(s.ScanError):
+            s.parse_trivy([])
+
+    def test_multiple_targets_are_flattened(self):
+        data = {"Results": [
+            {"Target": "Dockerfile", "Misconfigurations": [self._m()]},
+            {"Target": "deploy/app.yaml", "Misconfigurations": [
+                self._m(mid="KSV001", sev="CRITICAL")]},
+        ]}
+        out = s.parse_trivy(data)
+        self.assertEqual([f["path"] for f in out], ["Dockerfile", "deploy/app.yaml"])
+
+
+class TestDetectIac(unittest.TestCase):
+    def _touch(self, root, rel):
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text("x", encoding="utf-8")
+
+    def test_detects_dockerfile(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "Dockerfile")
+            self.assertEqual(s.detect_iac(root), ["Dockerfile"])
+
+    def test_detects_dockerfile_variant(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "Dockerfile.prod")
+            self.assertEqual(s.detect_iac(root), ["Dockerfile.prod"])
+
+    def test_detects_compose(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "docker-compose.yml")
+            self.assertEqual(s.detect_iac(root), ["docker-compose.yml"])
+
+    def test_detects_terraform(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "infra/main.tf")
+            self.assertEqual(s.detect_iac(root), ["infra/main.tf"])
+
+    def test_detects_kubernetes_manifest_in_known_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "k8s/deployment.yaml")
+            self.assertEqual(s.detect_iac(root), ["k8s/deployment.yaml"])
+
+    def test_plain_python_project_has_no_iac(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "app.py")
+            self._touch(root, "requirements.txt")
+            self.assertEqual(s.detect_iac(root), [])
+
+    def test_skips_vendor_and_node_modules(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "node_modules/pkg/Dockerfile")
+            self.assertEqual(s.detect_iac(root), [])
+
+    def test_unrelated_yaml_is_not_iac(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "config/settings.yaml")
+            self.assertEqual(s.detect_iac(root), [])
 
 
 if __name__ == "__main__":

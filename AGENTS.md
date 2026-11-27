@@ -5,14 +5,19 @@ Instruções para agentes de código que seguem a convenção `AGENTS.md`
 
 ## O que é este repositório
 
-`secscan` é um CLI de auditoria de segurança que roda três ferramentas gratuitas sobre um projeto
-e consolida o resultado num relatório único por severidade:
+`secscan` é um CLI de auditoria de segurança que roda quatro ferramentas gratuitas sobre um
+projeto e consolida o resultado num relatório único por severidade:
 
 | Camada | Ferramenta | Pega o quê |
 |---|---|---|
 | Segredos | gitleaks 8.30.1 | token, chave de API, senha commitada |
 | Dependências | osv-scanner 2.7.1 | CVE em biblioteca de terceiros, com nota CVSS |
 | Código (SAST) | semgrep 1.187 | injeção SQL, `eval`, `shell=True`, cripto fraca, XSS |
+| Infraestrutura | trivy 0.76.2 | Dockerfile e k8s inseguros: root, `privileged`, segredo em `ENV` |
+
+A camada de infraestrutura roda só quando existe `Dockerfile`, `docker-compose*.yml`, `*.tf` ou
+manifesto k8s — senão aparece como `pulado`. O Trivy entra **apenas** com o scanner `misconfig`;
+os scanners `vuln` e `secret` dele duplicariam osv-scanner e gitleaks.
 
 O núcleo é `secscan.py`. Ele não depende de nenhum agente — é um script Python comum.
 
@@ -90,13 +95,15 @@ da linha, então mover código não faz o achado reaparecer.
 - **A camada de dependências precisa de lockfile ou `requirements.txt`.** Manifestos puros
   (`pyproject.toml`, `package.json` sem lockfile ao lado) são ignorados — e é justamente a
   camada que mais rende. Projeto Python com `requirements.txt` está coberto.
+- **Misconfig de infra não é vulnerabilidade de código.** `privileged: true` num cluster local
+  de teste não tem o peso do mesmo campo em produção, e o relatório não distingue os ambientes.
 
 ## Saídas geradas
 
 - `relatorio.md` — estado de cada camada, tabela por severidade (com a coluna `Corrigir para`
   quando o advisory informa a versão corrigida), instruções de correção
 - `secscan.sarif` — SARIF 2.1.0, consumível por GitHub code scanning, GitLab e Azure DevOps
-- `gitleaks.json`, `osv.json`, `semgrep.json` — saída bruta
+- `gitleaks.json`, `osv.json`, `semgrep.json`, `trivy.json` — saída bruta
 
 Segredos são redigidos no JSON por padrão. O valor real só aparece com `--reveal-secrets`.
 
@@ -117,6 +124,9 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
 - `gitleaks dir` não respeita `.gitignore`; `secscan.py` gera um TOML temporário com allowlist.
 - Console do Windows não é UTF-8: o terminal usa rótulos ASCII (`CRITICA`), o `relatorio.md`
   mantém acentuação.
+- `trivy config` reporta PASS e FAIL no mesmo array. Filtrar por `Status == "FAIL"`.
+- `trivy config` usa `CauseMetadata.StartLine`, que pode estar ausente em regra de arquivo
+  inteiro (ex. "no HEALTHCHECK").
 
 ## Uso autorizado
 

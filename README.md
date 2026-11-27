@@ -1,7 +1,7 @@
 # secscan
 
 Varredura de segurança em um comando, para o **seu próprio** código.
-Três camadas — segredos, dependências e código-fonte — num único relatório.
+Quatro camadas — segredos, dependências, código-fonte e infraestrutura — num único relatório.
 
 ```bash
 ./secscan.sh /caminho/do/seu-projeto
@@ -11,6 +11,7 @@ Três camadas — segredos, dependências e código-fonte — num único relató
   gitleaks       ok (1.0s)
   osv-scanner    ok (4.3s)
   semgrep        ok (12.4s)
+  trivy          ok (2.8s)
 
   CRITICA     6
   ALTA       14
@@ -27,8 +28,16 @@ Três camadas — segredos, dependências e código-fonte — num único relató
 | Segredos | [gitleaks](https://github.com/gitleaks/gitleaks) 8.30.1 | token, chave de API, senha commitada |
 | Dependências | [osv-scanner](https://github.com/google/osv-scanner) 2.7.1 | CVE em biblioteca de terceiros, com nota CVSS |
 | Código (SAST) | [semgrep](https://semgrep.dev) 1.187 | injeção SQL, `eval`, `shell=True`, cripto fraca, XSS |
+| Infraestrutura | [trivy](https://trivy.dev) 0.76.2 | Dockerfile e k8s inseguros: container como root, `privileged`, segredo em `ENV` |
 
 Todas gratuitas. Depois da primeira execução, rodam offline.
+
+A camada de infraestrutura só roda quando existe `Dockerfile`, `docker-compose*.yml`, `*.tf`
+ou manifesto k8s no projeto — sem isso ela aparece como "pulado", sem custo de tempo. Para
+forçar mesmo assim, use `--iac`.
+
+O Trivy entra **só com o scanner `misconfig`**. Os scanners `vuln` e `secret` dele duplicariam
+o osv-scanner e o gitleaks: mais ruído, zero cobertura nova.
 
 As versões são fixas de propósito: o `secscan.py` depende do formato JSON de cada ferramenta.
 Trocar de versão exige revalidar o parsing com os testes.
@@ -71,10 +80,10 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 bash install.sh
 ```
 
-Cria `bin/` (gitleaks + osv-scanner portáteis) e `.venv/` (semgrep isolado). Nada é instalado
-no sistema — só arquivos nesta pasta.
+Cria `bin/` (gitleaks + osv-scanner + trivy portáteis) e `.venv/` (semgrep isolado). Nada é
+instalado no sistema — só arquivos nesta pasta.
 
-Os dois binários são conferidos contra o **SHA-256 oficial** da release fixada antes de serem
+Os três binários são conferidos contra o **SHA-256 oficial** da release fixada antes de serem
 usados. Se o hash não bater, o instalador aborta e descarta o arquivo — não existe caminho que
 aceite um binário não verificado. Os hashes estão embutidos nos scripts, um por arquitetura
 (`x64`/`amd64` e `arm64`).
@@ -105,7 +114,8 @@ No PowerShell: `& ".\secscan.cmd" "..\meu-projeto"`
 | `--reveal-secrets` | não redigir segredos no JSON (necessário para revogar credencial) |
 | `--keep N` | quantos relatórios manter (padrão 20; `0` = infinito). Relatórios marcados com `SENSIVEL.txt` são exceção: só o mais recente sobrevive |
 | `--allow-tool-failure` | não sair com código 2 quando uma ferramenta quebra |
-| `--no-secrets` `--no-deps` `--no-sast` | pula uma das camadas |
+| `--no-secrets` `--no-deps` `--no-sast` `--no-iac` | pula uma das camadas |
+| `--iac` | força a camada de infraestrutura mesmo sem IaC detectado |
 | `-v` | mostra a saída das ferramentas |
 
 ### Rulesets por stack
@@ -130,7 +140,7 @@ Console resumido + `security-report/<timestamp>/` com:
 - `relatorio.md` — estado de cada camada, tabela por severidade com a coluna **Corrigir para**
   (versão mínima segura extraída do advisory, quando o OSV a informa) e instruções de correção
 - `secscan.sarif` — SARIF 2.1.0, para GitHub code scanning / GitLab / Azure DevOps
-- `gitleaks.json`, `osv.json`, `semgrep.json` — saída bruta de cada ferramenta
+- `gitleaks.json`, `osv.json`, `semgrep.json`, `trivy.json` — saída bruta de cada ferramenta
 
 O topo do `relatorio.md` marca todo o conteúdo como **dado não confiável**: nomes de arquivo e
 mensagens vêm do projeto auditado, que pode ser de terceiros. Um agente que lê esse relatório
@@ -190,8 +200,9 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-43 testes cobrindo o parsing das três ferramentas, mapeamento de severidade, fingerprints por
-conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore` e geração de SARIF.
+69 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore`, detecção de IaC,
+retenção de relatório sensível e geração de SARIF.
 O parsing é feito em funções puras justamente para poder ser testado sem rodar os binários.
 
 ## Integração com CI
@@ -212,6 +223,13 @@ publica o SARIF no GitHub Security tab e só falha depois do upload. Copie para
   com só `requirements.txt` está coberto; projeto com só `pyproject.toml` não está.
 - **Não substitui pentest.** Isso pega o que já é conhecido e automatizável. Falha de lógica de
   negócio (usuário A acessando pedido do usuário B) só um humano com contexto encontra.
+- **Misconfig de infraestrutura não é vulnerabilidade de código.** O Trivy aponta configuração
+  insegura (container como root, `privileged: true`, `latest` sem pin). Um `privileged: true`
+  num cluster de teste local não tem o peso do mesmo campo em produção — o relatório não sabe
+  distinguir os dois ambientes.
+- **A camada de infraestrutura cobre só o que existe em arquivo.** Dockerfile, compose, `.tf`
+  e manifesto k8s versionado. Infra provisionada por console, ou imagem construída fora do
+  repositório, fica invisível.
 
 ## Segurança dos dados
 

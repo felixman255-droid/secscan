@@ -1,12 +1,12 @@
 ---
 name: secscan
-description: "Varredura de segurança local em um projeto: segredos commitados (gitleaks), CVEs em dependências (osv-scanner) e SAST (semgrep) em um único comando, com relatório unificado por severidade e SARIF. Usar quando o usuário pedir para escanear ou auditar a segurança de um projeto, procurar chaves/tokens vazados no código, checar vulnerabilidades em dependências, rodar SAST, ou invocar /secscan. Triggers: secscan, escanear segurança, varrer projeto, segredo vazado, chave exposta, CVE, vulnerabilidade em dependência, SAST, auditoria de segurança, security scan."
+description: "Varredura de segurança local em um projeto: segredos commitados (gitleaks), CVEs em dependências (osv-scanner), SAST (semgrep) e misconfig de infraestrutura (trivy) em um único comando, com relatório unificado por severidade e SARIF. Usar quando o usuário pedir para escanear ou auditar a segurança de um projeto, procurar chaves/tokens vazados no código, checar vulnerabilidades em dependências, rodar SAST, revisar Dockerfile/k8s/Terraform, ou invocar /secscan. Triggers: secscan, escanear segurança, varrer projeto, segredo vazado, chave exposta, CVE, vulnerabilidade em dependência, SAST, Dockerfile inseguro, k8s privilegiado, auditoria de segurança, security scan."
 agent_created: true
 ---
 
 # secscan — varredura de segurança local
 
-Executa três camadas de defesa sobre o código do próprio usuário e entrega um relatório unificado.
+Executa quatro camadas de defesa sobre o código do próprio usuário e entrega um relatório unificado.
 Todas as ferramentas são gratuitas, portáteis e rodam offline após a primeira execução.
 
 Este arquivo segue o formato de skill (frontmatter com `name` e `description`) lido por Claude
@@ -19,7 +19,7 @@ depende de agente nenhum.
 O diretório desta skill deve conter `secscan.py`, `bin/` e `.venv/`. Verificar:
 
 ```bash
-ls <diretório-da-skill>/bin/gitleaks* <diretório-da-skill>/bin/osv-scanner* <diretório-da-skill>/.venv
+ls <diretório-da-skill>/bin/gitleaks* <diretório-da-skill>/bin/osv-scanner* <diretório-da-skill>/bin/trivy* <diretório-da-skill>/.venv
 ```
 
 Se `bin/` ou `.venv/` não existirem, rodar o instalador uma vez:
@@ -61,7 +61,8 @@ projeto do usuário com relatórios. Sempre entre aspas: caminhos no Windows cos
 | `--reveal-secrets` | não redigir segredos no JSON |
 | `--keep N` | quantos relatórios manter (padrão 20). Diretórios com `SENSIVEL.txt` são reduzidos a 1 |
 | `--allow-tool-failure` | não sair com 2 quando uma ferramenta quebra |
-| `--no-secrets` / `--no-deps` / `--no-sast` | pula uma camada |
+| `--no-secrets` / `--no-deps` / `--no-sast` / `--no-iac` | pula uma camada |
+| `--iac` | força a camada de infraestrutura mesmo sem IaC detectado |
 | `-v` | mostra a saída das ferramentas |
 | `--fail-on critica\|alta\|media\|baixa\|nunca` | severidade que faz sair com código 1 (padrão `alta`) |
 
@@ -132,6 +133,11 @@ config local não tem o peso de um `eval()` numa rota HTTP.
   (`pyproject.toml`, `package.json` sem lockfile ao lado) **não são lidos** — nesse caso o
   osv-scanner aparece como "pulado". Projeto Python só com `requirements.txt` está coberto;
   só com `pyproject.toml` não está. Não avise "SCA cego" sem checar qual dos dois existe.
+- A camada de infraestrutura (trivy) só roda quando existe `Dockerfile`, `docker-compose*.yml`,
+  `*.tf` ou manifesto k8s. Sem isso aparece como "pulado" — não é falha.
+- Misconfig de infra não é vulnerabilidade de código: `privileged: true` num cluster local de
+  teste não tem o peso do mesmo campo em produção, e o relatório não distingue os ambientes.
+  Sinalizar isso ao usuário em vez de tratar como CRÍTICA automaticamente.
 - Isso não substitui pentest: falha de lógica de negócio (usuário A acessando dado do usuário B)
   só um humano com contexto do domínio encontra.
 
@@ -143,6 +149,11 @@ config local não tem o peso de um `eval()` numa rota HTTP.
   Mapear por faixa: ≥9 CRÍTICA, ≥7 ALTA, ≥4 MÉDIA, >0 BAIXA.
 - `semgrep` marca `confidence: LOW` em regras de segredo e SQLi por heurística. **Não** rebaixar
   severidade por isso — rebaixar esconde chave de API exposta.
+- `trivy config` reporta PASS e FAIL no mesmo array `Misconfigurations`. Filtrar por
+  `Status == "FAIL"`, senão o relatório enche de "está correto".
+- `trivy config` usa `CauseMetadata.StartLine`, que **pode estar ausente** (regra de arquivo
+  inteiro, ex. "no HEALTHCHECK"). Não assumir inteiro.
+- Não habilitar os scanners `vuln` e `secret` do trivy: duplicam osv-scanner e gitleaks.
 - `gitleaks dir` não respeita `.gitignore`. O `secscan.py` já gera um TOML temporário com
   `[extend] useDefault = true` e `[[allowlists]] paths` para ignorar `node_modules`, `.venv`,
   `dist`, `build`, `target`, `vendor`.

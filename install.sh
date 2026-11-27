@@ -23,21 +23,34 @@ esac
 # Trocar de versao exige revalidar o parsing: python -m unittest discover -s tests
 GL_VER=8.30.1
 OSV_VER=2.7.1
+TRV_VER=0.76.2
 GL_ARCH=$([ "$A" = "amd64" ] && echo "x64" || echo "arm64")
+
+# Trivy usa nomenclatura propria (Linux-64bit / macOS-ARM64)
+case "$OS/$A" in
+  linux/amd64)  TRV_ASSET="Linux-64bit" ;;
+  linux/arm64)  TRV_ASSET="Linux-ARM64" ;;
+  darwin/amd64) TRV_ASSET="macOS-64bit" ;;
+  darwin/arm64) TRV_ASSET="macOS-ARM64" ;;
+esac
 
 case "$OS/$A" in
   linux/amd64)
     GL_SHA=551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
-    OSV_SHA=fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8 ;;
+    OSV_SHA=fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8
+    TRV_SHA=bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf ;;
   linux/arm64)
     GL_SHA=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
-    OSV_SHA=983d22fbad9724514e3fcc6acc83b5fa64c5ffa6b0d9f510028f22c1b223ff81 ;;
+    OSV_SHA=983d22fbad9724514e3fcc6acc83b5fa64c5ffa6b0d9f510028f22c1b223ff81
+    TRV_SHA=ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3 ;;
   darwin/amd64)
     GL_SHA=dfe101a4db2255fc85120ac7f3d25e4342c3c20cf749f2c20a18081af1952709
-    OSV_SHA=b8420d5485ba792626315f1bf9a5a2046e971d38eea75bf9090c38852dbc3b1b ;;
+    OSV_SHA=b8420d5485ba792626315f1bf9a5a2046e971d38eea75bf9090c38852dbc3b1b
+    TRV_SHA=e08bb9ea449ecf66c6bfb03cbb8697c503ff33d35fc585c9747e3eaeb7ed4c7b ;;
   darwin/arm64)
     GL_SHA=b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5
-    OSV_SHA=b22c02877a811c8f78956e8643efa554932b7378f590d13f8e97d4e9448a29f3 ;;
+    OSV_SHA=b22c02877a811c8f78956e8643efa554932b7378f590d13f8e97d4e9448a29f3
+    TRV_SHA=ae7ea358326960406b703c77b2ac490190797d80b306b5b50c2a27221da0a5b8 ;;
   *) echo "sem hash fixado para $OS/$A"; exit 1 ;;
 esac
 
@@ -79,6 +92,14 @@ curl -sL -o "$BIN/osv-scanner" \
 verify "$BIN/osv-scanner" "$OSV_SHA" "osv-scanner"
 chmod +x "$BIN/osv-scanner"
 
+echo "> trivy $TRV_VER ($OS/$A)"
+curl -sL -o "$TMP/trv.tar.gz" \
+  "https://github.com/aquasecurity/trivy/releases/download/v${TRV_VER}/trivy_${TRV_VER}_${TRV_ASSET}.tar.gz"
+verify "$TMP/trv.tar.gz" "$TRV_SHA" "trivy"
+tar -xzf "$TMP/trv.tar.gz" -C "$TMP" trivy
+mv -f "$TMP/trivy" "$BIN/trivy"
+chmod +x "$BIN/trivy"
+
 echo "> semgrep (venv isolado)"
 python3 -m venv "$HERE/.venv"
 "$HERE/.venv/bin/python" -m pip install --quiet --upgrade pip
@@ -98,4 +119,5 @@ echo ""
 echo "Instalado em: $HERE"
 "$BIN/gitleaks" version
 "$BIN/osv-scanner" --version | head -1
+"$BIN/trivy" --version | head -1
 "$HERE/.venv/bin/semgrep" --version

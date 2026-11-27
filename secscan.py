@@ -43,7 +43,7 @@ SEV_MAP = {"CRITICAL": "CRÍTICA", "HIGH": "ALTA", "MODERATE": "MÉDIA",
 SARIF_LEVEL = {"CRÍTICA": "error", "ALTA": "error", "MÉDIA": "warning",
                "BAIXA": "note", "INFO": "note"}
 
-TOOLS = ("gitleaks", "osv-scanner", "semgrep")
+TOOLS = ("gitleaks", "osv-scanner", "semgrep", "trivy")
 STATUS_OK, STATUS_SKIP, STATUS_FAIL = "ok", "skipped", "failed"
 
 SKIP_DIRS = ("node_modules", ".venv", "venv", "dist", "build", "target",
@@ -85,6 +85,7 @@ def exe(name: str) -> Path:
 
 GITLEAKS = exe("gitleaks")
 OSV = exe("osv-scanner")
+TRIVY = exe("trivy")
 VENV_DIR = BASE / (".venv/Scripts" if IS_WIN else ".venv/bin")
 SEMGREP = VENV_DIR / ("semgrep.exe" if IS_WIN else "semgrep")
 
@@ -264,6 +265,85 @@ def parse_semgrep(data):
     return out
 
 
+def parse_trivy(data):
+    """Converte a saida de `trivy config` (misconfig) em achados.
+
+    Trivy reporta PASS e FAIL no mesmo array; so FAIL interessa. `StartLine`
+    pode vir ausente (regras de arquivo inteiro, ex. "no HEALTHCHECK"), por
+    isso o line e opcional.
+    """
+    if not isinstance(data, dict) or "Results" not in data:
+        raise ScanError("trivy: campo 'Results' ausente no JSON")
+    results = data["Results"]
+    if not isinstance(results, list):
+        raise ScanError("trivy: 'Results' nao e uma lista")
+
+    sev_map = {"CRITICAL": "CRÍTICA", "HIGH": "ALTA",
+               "MEDIUM": "MÉDIA", "LOW": "BAIXA"}
+    out = []
+    for r in results:
+        if not isinstance(r, dict):
+            raise ScanError("trivy: item de 'Results' nao e um objeto")
+        target = r.get("Target") or ""
+        for m in r.get("Misconfigurations") or []:
+            if str(m.get("Status", "")).upper() != "FAIL":
+                continue
+            mid = m.get("ID") or "?"
+            cm = m.get("CauseMetadata") or {}
+            out.append({
+                "tool": "trivy",
+                "rule": mid,
+                "sev": sev_map.get(str(m.get("Severity", "")).upper(), "MÉDIA"),
+                "title": short(f"{mid} - {m.get('Title') or ''}", 108),
+                "path": target,
+                "line": cm.get("StartLine"),
+                "detail": short(m.get("Message") or m.get("Title") or "", 150),
+                "pkg": None,
+                "snippet": None,
+                "fix": None,
+            })
+    return out
+
+
+# pastas cujo conteudo yaml conta como manifesto de infraestrutura
+IAC_YAML_DIRS = {"k8s", "kubernetes", "manifests", "deploy", "deployment",
+                 "helm", "charts", "templates", "kustomize", "base", "overlays"}
+
+
+def detect_iac(target: Path, max_depth=3):
+    """Lista arquivos de infraestrutura (Dockerfile, compose, .tf, k8s).
+
+    Retorna caminhos relativos ordenados. Vazio significa que a camada de
+    misconfig nao tem o que inspecionar e deve aparecer como "pulado".
+    """
+    found = []
+    root_str = str(target)
+    try:
+        for root, dirs, files in os.walk(target):
+            rel = os.path.relpath(root, root_str)
+            depth = 0 if rel == "." else rel.count(os.sep) + 1
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+            if depth >= max_depth:
+                dirs[:] = []
+            here = Path(rel) if rel != "." else Path(".")
+            in_iac_dir = any(part.lower() in IAC_YAML_DIRS for part in here.parts)
+            for fn in files:
+                low = fn.lower()
+                is_iac = (
+                    low == "dockerfile" or low.startswith("dockerfile.")
+                    or low.endswith(".dockerfile")
+                    or low.startswith("docker-compose") and low.endswith((".yml", ".yaml"))
+                    or low.startswith("compose.") and low.endswith((".yml", ".yaml"))
+                    or low.endswith(".tf")
+                    or (in_iac_dir and low.endswith((".yml", ".yaml")))
+                )
+                if is_iac:
+                    found.append(fn if rel == "." else f"{Path(rel).as_posix()}/{fn}")
+    except OSError:
+        pass
+    return sorted(found)
+
+
 def normalize_paths(findings, target):
     """Deixa os caminhos relativos ao alvo e normaliza separadores.
 
@@ -428,6 +508,32 @@ def scan_deps(target, outdir, verbose):
     try:
         data = json.loads(report.read_text(encoding="utf-8") or "{}")
         return parse_osv(data), STATUS_OK, "", dt
+    except (json.JSONDecodeError, ScanError) as e:
+        return [], STATUS_FAIL, short(str(e), 300), dt
+
+
+def scan_iac(target, outdir, verbose):
+    """Roda `trivy config` (misconfig apenas).
+
+    Apenas misconfig de proposito: os scanners `vuln` e `secret` do Trivy
+    duplicariam osv-scanner e gitleaks, gerando ruido sem cobertura nova.
+    """
+    if not TRIVY.exists():
+        return [], STATUS_FAIL, "trivy nao instalado", 0.0
+
+    report = outdir / "trivy.json"
+    cmd = [TRIVY, "config", "--format", "json", "--output", str(report),
+           "--quiet", "--skip-check-update", "--skip-version-check"]
+    for d in SKIP_DIRS:
+        cmd += ["--skip-dirs", d]
+    cmd.append(str(target))
+
+    rc, out, dt = run(cmd, "trivy", stream=verbose)
+    if not report.exists():
+        return [], STATUS_FAIL, short(out.strip() or f"trivy falhou (rc={rc})", 300), dt
+    try:
+        data = json.loads(report.read_text(encoding="utf-8") or "{}")
+        return parse_trivy(data), STATUS_OK, "", dt
     except (json.JSONDecodeError, ScanError) as e:
         return [], STATUS_FAIL, short(str(e), 300), dt
 
@@ -711,6 +817,10 @@ def main():
     ap.add_argument("--no-secrets", action="store_true")
     ap.add_argument("--no-deps", action="store_true")
     ap.add_argument("--no-sast", action="store_true")
+    ap.add_argument("--iac", action="store_true",
+                    help="forcar a camada de misconfig (trivy config) mesmo sem IaC detectado")
+    ap.add_argument("--no-iac", action="store_true",
+                    help="desligar a camada de misconfig (trivy config)")
     ap.add_argument("-v", "--verbose", action="store_true",
                     help="mostra a saida das ferramentas")
     ap.add_argument("--fail-on", default="alta",
@@ -760,6 +870,17 @@ def main():
         f, st, msg, dt = scan_code(target, outdir, configs, args.verbose)
         findings += f
         tools.append(("semgrep", st, msg, dt))
+
+    if not args.no_iac:
+        iac_files = detect_iac(target)
+        if iac_files or args.iac:
+            print(f"  {C['dim']}> infra (trivy config)...{C['r']}")
+            f, st, msg, dt = scan_iac(target, outdir, args.verbose)
+            findings += f
+            tools.append(("trivy", st, msg, dt))
+        else:
+            tools.append(("trivy", STATUS_SKIP,
+                          "nenhum Dockerfile/compose/k8s/.tf no projeto", 0.0))
 
     findings = dedupe(normalize_paths(findings, target))
     findings.sort(key=lambda f: (SEV_ORDER.get(f["sev"], 9), f["path"], f.get("line") or 0))

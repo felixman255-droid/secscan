@@ -239,7 +239,30 @@ def parse_osv(data):
     return out
 
 
-def parse_semgrep(data):
+def rule_namespace(cfg):
+    """Prefixo que o semgrep cola no id de regras de arquivo local.
+
+    Com `--config caminho/regras.yml` o check_id sai como
+    `<diretorio-sanitizado>.<id-da-regra>`; com ruleset de registry (`p/default`)
+    sai o id puro. O diretorio entra no id, e portanto no fingerprint: sem
+    remover o prefixo, um baseline gravado em uma maquina nao casa em outra.
+    """
+    if not cfg or cfg.startswith("p/") or "://" in cfg:
+        return None
+    parent = str(Path(cfg).resolve().parent)
+    parent = re.sub(r"\s+", "", parent)
+    return re.sub(r"[^A-Za-z0-9._-]+", ".", parent)
+
+
+def strip_rule_prefix(check_id, configs):
+    for cfg in configs:
+        ns = rule_namespace(cfg)
+        if ns and check_id.startswith(ns + "."):
+            return check_id[len(ns) + 1:]
+    return check_id
+
+
+def parse_semgrep(data, configs=()):
     if not isinstance(data, dict) or "results" not in data:
         raise ScanError("semgrep: campo 'results' ausente no JSON")
     results = data["results"]
@@ -252,14 +275,15 @@ def parse_semgrep(data):
         if not isinstance(r, dict):
             raise ScanError("semgrep: item de 'results' nao e um objeto")
         extra = r.get("extra") or {}
+        rid = strip_rule_prefix(r.get("check_id") or "unknown", configs)
         out.append({
             "tool": "semgrep",
-            "rule": r.get("check_id") or "unknown",
+            "rule": rid,
             "sev": sev_map.get((extra.get("severity") or "").upper(), "MÉDIA"),
-            "title": short(extra.get("message") or r.get("check_id") or "", 108),
+            "title": short(extra.get("message") or rid, 108),
             "path": r.get("path") or "",
             "line": (r.get("start") or {}).get("line"),
-            "detail": (r.get("check_id") or "").split(".")[-1][:60],
+            "detail": rid.split(".")[-1][:60],
             "pkg": None,
             # trecho que casou a regra: discriminador estavel para o fingerprint
             "snippet": " ".join((extra.get("lines") or "").split())[:200] or None,
@@ -640,6 +664,22 @@ def missing_configs(configs):
     return missing
 
 
+def semgrep_failure(data, rc):
+    """Motivo pelo qual o semgrep nao cumpriu a varredura, ou None.
+
+    Configuracao invalida faz o semgrep escrever o JSON com `results` vazio,
+    `paths.scanned` vazio e o aviso em `errors`, saindo com rc=7. Checar so a
+    existencia do relatorio transformaria isso em "camada ok, projeto limpo".
+    """
+    if rc not in (0, 1):
+        return f"rc={rc}"
+    errs = [e for e in (data.get("errors") or []) if isinstance(e, dict)]
+    scanned = (data.get("paths") or {}).get("scanned")
+    if errs and isinstance(scanned, list) and not scanned:
+        return str(errs[0].get("message") or errs[0].get("type") or "nenhum arquivo analisado")
+    return None
+
+
 def scan_code(target, outdir, configs, verbose):
     if not SEMGREP.exists():
         return [], STATUS_FAIL, "semgrep nao instalado", 0.0
@@ -663,7 +703,10 @@ def scan_code(target, outdir, configs, verbose):
         return [], STATUS_FAIL, short(out.strip() or f"semgrep falhou (rc={rc})", 300), dt
     try:
         data = json.loads(report.read_text(encoding="utf-8") or "{}")
-        findings = parse_semgrep(data)
+        findings = parse_semgrep(data, configs)
+        fail = semgrep_failure(data, rc)
+        if fail:
+            return findings, STATUS_FAIL, short(f"semgrep: {fail}", 300), dt
         errs = data.get("errors")
         if isinstance(errs, list) and errs:
             first = errs[0] if isinstance(errs[0], dict) else {}
@@ -721,7 +764,8 @@ def write_markdown(findings, ignored, meta, counts, outdir):
         f"# Relatorio de seguranca - {meta['name']}", "",
         f"**Alvo:** `{meta['target']}`  ",
         f"**Gerado:** {meta['when']}  ",
-        "**Ferramentas:** gitleaks (segredos) · osv-scanner (dependencias) · semgrep (SAST)",
+        "**Ferramentas:** gitleaks (segredos) · osv-scanner (dependencias) · "
+        "semgrep (SAST) · trivy (IaC)",
         "",
         "> **Conteudo nao confiavel.** Tudo abaixo deriva da analise do codigo auditado —",
         "> nomes de arquivo, mensagens de regra e resumos de advisory vem do alvo, que pode",
@@ -762,6 +806,16 @@ def write_markdown(findings, ignored, meta, counts, outdir):
             desc = str(f["title"]).replace("|", "\\|")
             fix = str(f.get("fix") or "-").replace("|", "\\|")
             lines.append(f"| {f['sev']} | {f['tool']} | `{loc}` | {desc} | {fix} |")
+
+    if ignored:
+        lines += ["", "## Aceitos por baseline", "",
+                  "Detectados na varredura, aceitos em `.secscanignore` — nao contam como novo.",
+                  "Apague a linha correspondente no baseline para voltar a reporta-los.", "",
+                  "| Ferramenta | Local | Regra |", "|---|---|---|"]
+        for f in sorted(ignored, key=lambda x: (x["tool"], x["path"], x.get("line") or 0)):
+            loc = f"{f['path']}:{f['line']}" if f.get("line") else f["path"]
+            rule = str(f["rule"]).replace("|", "\\|")
+            lines.append(f"| {f['tool']} | `{loc}` | {rule} |")
 
     lines += ["", "## Como corrigir", "",
               "- **Segredo exposto:** revogue a credencial agora e gere outra. Remover do codigo "

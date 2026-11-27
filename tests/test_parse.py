@@ -213,6 +213,73 @@ class TestSemgrep(unittest.TestCase):
         self.assertEqual(s.parse_semgrep(data)[0]["sev"], "MÉDIA")
 
 
+class TestRuleId(unittest.TestCase):
+    """Id de regra local nao pode carregar o caminho absoluto: quebra o baseline."""
+
+    def test_local_config_namespace_is_parent_dir(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "rule.yml"
+            cfg.write_text("rules: []", encoding="utf-8")
+            ns = s.rule_namespace(str(cfg))
+            self.assertTrue(ns)
+            for ch in (":", "\\", "/", " "):
+                self.assertNotIn(ch, ns)
+
+    def test_windows_path_with_space(self):
+        ns = s.rule_namespace(r"C:\a b\rules\x.yml")
+        self.assertTrue(ns.endswith("ab.rules"))
+        self.assertNotIn(":", ns)
+        self.assertNotIn("\\", ns)
+
+    def test_registry_has_no_namespace(self):
+        self.assertIsNone(s.rule_namespace("p/default"))
+        self.assertEqual(s.strip_rule_prefix("python.lang.x.eval", ["p/default"]),
+                         "python.lang.x.eval")
+
+    def test_same_rule_in_different_dirs_gets_same_id(self):
+        a = s.strip_rule_prefix(s.rule_namespace("/x/rule.yml") + ".eval-detected", ["/x/rule.yml"])
+        b = s.strip_rule_prefix(s.rule_namespace("/y/rule.yml") + ".eval-detected", ["/y/rule.yml"])
+        self.assertEqual(a, "eval-detected")
+        self.assertEqual(b, "eval-detected")
+
+    def test_parse_semgrep_applies_strip(self):
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "regras.yml"
+            cfg.write_text("rules: []", encoding="utf-8")
+            ns = s.rule_namespace(str(cfg))
+            data = {"results": [{"check_id": f"{ns}.test-eval", "path": "a.py",
+                                 "start": {"line": 1},
+                                 "extra": {"severity": "ERROR", "message": "m"}}]}
+            out = s.parse_semgrep(data, [str(cfg)])
+            self.assertEqual(out[0]["rule"], "test-eval")
+            self.assertEqual(out[0]["detail"], "test-eval")
+
+
+class TestSemgrepFailure(unittest.TestCase):
+    """Config invalida deixa JSON vazio com rc=7 — nao pode virar 'ok'."""
+
+    def test_invalid_config_rc7_is_failure(self):
+        data = {"results": [], "paths": {"scanned": []},
+                "errors": [{"message": "invalid configuration file found (1 configs were invalid)"}]}
+        self.assertIsNotNone(s.semgrep_failure(data, 7))
+
+    def test_findings_rc1_is_success(self):
+        self.assertIsNone(s.semgrep_failure({"results": [], "paths": {"scanned": ["a.py"]}}, 1))
+
+    def test_partial_error_with_files_scanned_is_success(self):
+        data = {"results": [], "paths": {"scanned": ["a.py"]},
+                "errors": [{"message": "Syntax error at line 3"}]}
+        self.assertIsNone(s.semgrep_failure(data, 0))
+
+    def test_nothing_scanned_with_errors_is_failure(self):
+        data = {"results": [], "paths": {"scanned": []},
+                "errors": [{"message": "Timeout"}]}
+        self.assertIsNotNone(s.semgrep_failure(data, 0))
+
+    def test_clean_project_no_errors_is_success(self):
+        self.assertIsNone(s.semgrep_failure({"results": [], "paths": {"scanned": []}}, 0))
+
+
 # --------------------------------------------------------------- severidade
 
 class TestSeverity(unittest.TestCase):
@@ -337,6 +404,50 @@ class TestBaseline(unittest.TestCase):
             p = Path(td) / ".secscanignore"
             p.write_text("# comentario\nabc123  semgrep  eval  a.py\n", encoding="utf-8")
             self.assertEqual(s.load_baseline(p), {"abc123"})
+
+
+# ------------------------------------------------------------------- relatorio
+
+META = {"target": "/proj", "name": "proj", "when": "agora",
+        "tools": [("gitleaks", s.STATUS_OK, "", 0.1)]}
+
+
+def _f(**kw):
+    base = {"tool": "semgrep", "rule": "eval", "path": "a.py", "line": 3,
+            "sev": "ALTA", "title": "eval do usuario", "pkg": None, "fix": None, "fp": "x"}
+    base.update(kw)
+    return base
+
+
+class TestReport(unittest.TestCase):
+    def _render(self, findings, ignored):
+        counts = {}
+        for f in findings:
+            counts[f["sev"]] = counts.get(f["sev"], 0) + 1
+        with tempfile.TemporaryDirectory() as td:
+            s.write_markdown(findings, ignored, META, counts, Path(td))
+            return (Path(td) / "relatorio.md").read_text(encoding="utf-8")
+
+    def test_ignored_listed_with_tool_path_rule(self):
+        md = self._render([_f()], [_f(tool="gitleaks", rule="aws-key",
+                                       path="infra/terraform.tfvars", line=12,
+                                       sev="CRÍTICA", title="chave")])
+        self.assertIn("## Aceitos por baseline", md)
+        self.assertIn("`infra/terraform.tfvars:12`", md)
+        self.assertIn("aws-key", md)
+
+    def test_ignored_not_counted_in_findings_table(self):
+        md = self._render([_f()], [_f(path="ignorado.py", title="nao deve aparecer")])
+        achados = md.split("## Achados", 1)[1].split("## Aceitos por baseline", 1)[0]
+        self.assertNotIn("nao deve aparecer", achados)
+
+    def test_no_section_when_baseline_empty(self):
+        md = self._render([_f()], [])
+        self.assertNotIn("## Aceitos por baseline", md)
+
+    def test_count_row_still_present(self):
+        md = self._render([_f()], [_f(), _f(path="b.py")])
+        self.assertIn("| _ignorados por baseline_ | _2_ |", md)
 
 
 # --------------------------------------------------------------------- sarif

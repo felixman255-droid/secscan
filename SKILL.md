@@ -95,7 +95,12 @@ aceitar o estado atual e passar a reportar apenas novidades:
 ```
 
 Grava `<alvo>/.secscanignore` (commitar junto com o projeto). O fingerprint não inclui o número
-da linha, então mover código não faz o achado reaparecer.
+da linha, então mover código não faz o achado reaparecer — nem trocar a máquina, porque o id de
+regra local é guardado sem o caminho absoluto da config.
+
+Os achados aceitos não somem do relatório: aparecem na seção **Aceitos por baseline**, com
+ferramenta, local e regra. Use essa seção para responder "o que já foi aceito" sem abrir o
+arquivo do baseline.
 
 Sugerir baseline quando o usuário reclamar de achados repetidos, ou quando o volume for grande
 e a maior parte for conhecida.

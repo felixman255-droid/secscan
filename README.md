@@ -195,6 +195,12 @@ valores alternativos como `privileged: "true"` entre aspas.
 Passar um `--semgrep-config` que não existe no disco marca a camada como `FALHOU` (código de
 saída `2`) em vez de reportar zero achados: "limpo" e "não rodou" são coisas diferentes.
 
+O mesmo vale para config que existe mas é inválida — YAML malformado, regra sem `id`. Nesse caso
+o semgrep **escreve o JSON normalmente** (com `results` vazio) e sai com `rc=7`; checar só a
+existência do relatório transformaria um erro de configuração em "projeto limpo". O secscan
+checa o código de saída (`0` e `1` são sucesso; `1` significa achados) e, como segunda rede, se
+o JSON veio sem nenhum arquivo analisado **e** com erros registrados.
+
 ## Saída
 
 Console resumido + `security-report/<timestamp>/` com:
@@ -230,6 +236,13 @@ regra`, **sem o número da linha**. Mover código, corrigir outra ocorrência ou
 não faz um item já aceito reaparecer. Quando a ferramenta não expõe o trecho — caso do gitleaks
 com a redação ativa — o fingerprint cai no índice de ocorrência dentro do arquivo.
 
+Regra local (`--semgrep-config examples/compose-rules.yml`) tem um detalhe que quebrava o
+baseline: o semgrep monta o id como `<diretório-da-config>.<id-da-regra>`, com o caminho
+absoluto sanitizado dentro. Como o id entra no fingerprint, um `.secscanignore` gravado em uma
+máquina não casava em outra — todo achado virava "novo". O secscan remove esse prefixo e guarda
+só o id da regra (`test-eval`, não `F.TemporariosdoGabriel.projeto.test-eval`), o que também
+deixa a coluna **Regra** do relatório legível.
+
 ## Silenciar ruído: três níveis, do mais local ao mais amplo
 
 Todos deixam rastro versionado no repositório — nenhum é um ponto cego invisível.
@@ -254,7 +267,8 @@ fixtures/
 
 **3. Achado aceito — `.secscanignore`.** O baseline. Diferente dos dois anteriores: age no
 resultado, não na varredura, então o achado continua sendo detectado e apenas não conta como
-novo. É o único dos três que o relatório mostra na seção de ignorados.
+novo. É o único dos três que aparece no relatório, na seção **Aceitos por baseline** — com
+ferramenta, local e regra, para você conferir a aceitação sem abrir o arquivo do baseline.
 
 Um detalhe que pega as pessoas: **`tests/` e `test/` já são excluídos pelo Semgrep por padrão.**
 Não é preciso `.semgrepignore` para eles — e vale saber que código dentro dessas pastas **nunca**
@@ -330,10 +344,12 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-94 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
-conteúdo, baseline, detecção de stack em monorepo, allowlist do gitleaks (sem herdar `.gitignore`), detecção de IaC
+108 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+conteúdo, baseline (inclusive portabilidade do id de regra local entre caminhos), detecção de
+stack em monorepo, allowlist do gitleaks (sem herdar `.gitignore`), detecção de IaC
 (inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do trivy, montagem
-do comando do trivy (globs de exclusão e flag offline), validação de `--semgrep-config` local,
+do comando do trivy (globs de exclusão e flag offline), validação de `--semgrep-config` local
+(ausente **e** inválida), seção de aceitos por baseline no relatório,
 modos de execução do gitleaks (histórico + working tree), escolha de ruleset padrão,
 retenção de relatório sensível, geração de SARIF e os invariantes do contrato (cache hermético,
 sem pré-aquecimento).

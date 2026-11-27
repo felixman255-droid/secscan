@@ -76,7 +76,9 @@ Para aceitar o estado atual e passar a reportar apenas novidades:
 ```
 
 Grava `<alvo>/.secscanignore` (commitar junto com o projeto). O fingerprint não inclui o número
-da linha, então mover código não faz o achado reaparecer.
+da linha, então mover código não faz o achado reaparecer — nem trocar a máquina, porque o id de
+regra local é guardado sem o caminho absoluto da config. Os aceitos aparecem no relatório na
+seção **Aceitos por baseline** (ferramenta, local, regra).
 
 ## Depois de rodar
 

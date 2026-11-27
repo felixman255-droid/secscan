@@ -86,6 +86,9 @@ def exe(name: str) -> Path:
 GITLEAKS = exe("gitleaks")
 OSV = exe("osv-scanner")
 TRIVY = exe("trivy")
+# cache do trivy dentro da skill: mantem a promessa de nao escrever nada
+# fora desta pasta (o padrao dele seria %LOCALAPPDATA%\trivy ou ~/.cache/trivy)
+TRIVY_CACHE = BASE / "cache" / "trivy"
 VENV_DIR = BASE / (".venv/Scripts" if IS_WIN else ".venv/bin")
 SEMGREP = VENV_DIR / ("semgrep.exe" if IS_WIN else "semgrep")
 
@@ -512,23 +515,34 @@ def scan_deps(target, outdir, verbose):
         return [], STATUS_FAIL, short(str(e), 300), dt
 
 
-def scan_iac(target, outdir, verbose):
-    """Roda `trivy config` (misconfig apenas).
+def trivy_cmd(target, outdir):
+    """Monta o comando de `trivy config` (misconfig apenas).
 
     Apenas misconfig de proposito: os scanners `vuln` e `secret` do Trivy
     duplicariam osv-scanner e gitleaks, gerando ruido sem cobertura nova.
     """
+    cmd = [TRIVY, "config", "--format", "json",
+           "--output", str(Path(outdir) / "trivy.json"),
+           "--quiet", "--skip-version-check",
+           # sem isso o trivy tenta baixar o bundle OCI de checks a cada run.
+           # Offline vira ERROR + ~7s de espera antes de cair no bundle
+           # embutido no binario. A flag corta a tentativa de rede por completo.
+           "--skip-check-update",
+           "--cache-dir", str(TRIVY_CACHE)]
+    for d in SKIP_DIRS:
+        # "**/" e obrigatorio: nome simples so casa no nivel raiz, deixando
+        # apps/web/node_modules passar e gerar achado de terceiro.
+        cmd += ["--skip-dirs", f"**/{d}"]
+    cmd.append(str(target))
+    return cmd
+
+
+def scan_iac(target, outdir, verbose):
     if not TRIVY.exists():
         return [], STATUS_FAIL, "trivy nao instalado", 0.0
 
-    report = outdir / "trivy.json"
-    cmd = [TRIVY, "config", "--format", "json", "--output", str(report),
-           "--quiet", "--skip-check-update", "--skip-version-check"]
-    for d in SKIP_DIRS:
-        cmd += ["--skip-dirs", d]
-    cmd.append(str(target))
-
-    rc, out, dt = run(cmd, "trivy", stream=verbose)
+    report = Path(outdir) / "trivy.json"
+    rc, out, dt = run(trivy_cmd(target, outdir), "trivy", stream=verbose)
     if not report.exists():
         return [], STATUS_FAIL, short(out.strip() or f"trivy falhou (rc={rc})", 300), dt
     try:

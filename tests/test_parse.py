@@ -593,5 +593,44 @@ class TestDetectIac(unittest.TestCase):
             self.assertEqual(s.detect_iac(root), [])
 
 
+class TestTrivyCmd(unittest.TestCase):
+    def _cmd(self):
+        return s.trivy_cmd(Path("/proj"), Path("/out"))
+
+    def test_target_is_last_argument(self):
+        self.assertEqual(self._cmd()[-1], str(Path("/proj")))
+
+    def test_skips_check_update(self):
+        # sem esta flag o trivy tenta baixar o bundle OCI a cada execucao:
+        # offline isso vira ERROR + ~7s de espera antes do fallback
+        self.assertIn("--skip-check-update", self._cmd())
+
+    def test_skip_dirs_uses_double_star_prefix(self):
+        # nome simples so casa na raiz: apps/web/node_modules escapava
+        cmd = self._cmd()
+        for d in s.SKIP_DIRS:
+            self.assertIn(f"**/{d}", cmd, f"padrao ausente para {d}")
+            self.assertNotIn(d, cmd, f"nome simples nao casa em profundidade: {d}")
+
+    def test_every_skip_dirs_has_a_value(self):
+        cmd = self._cmd()
+        for i, a in enumerate(cmd):
+            if a == "--skip-dirs":
+                self.assertTrue(cmd[i + 1].startswith("**/"))
+
+    def test_cache_dir_is_inside_the_skill(self):
+        # cache hermetico: nada e escrito fora da pasta da skill
+        cmd = self._cmd()
+        self.assertIn("--cache-dir", cmd)
+        cache = cmd[cmd.index("--cache-dir") + 1]
+        self.assertTrue(str(s.BASE) in cache, cache)
+
+    def test_writes_json_to_outdir(self):
+        cmd = self._cmd()
+        self.assertIn("--format", cmd)
+        self.assertEqual(cmd[cmd.index("--format") + 1], "json")
+        self.assertEqual(cmd[cmd.index("--output") + 1], str(Path("/out/trivy.json")))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

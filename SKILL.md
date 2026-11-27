@@ -153,6 +153,19 @@ config local não tem o peso de um `eval()` numa rota HTTP.
   `Status == "FAIL"`, senão o relatório enche de "está correto".
 - `trivy config` usa `CauseMetadata.StartLine`, que **pode estar ausente** (regra de arquivo
   inteiro, ex. "no HEALTHCHECK"). Não assumir inteiro.
+- `trivy config --skip-dirs` casa por **glob**, e nome simples (`node_modules`) só casa no
+  **nível raiz** — `apps/web/node_modules` escapa. Usar sempre `**/node_modules`. O
+  `trivy_cmd()` já monta assim; não simplificar para o nome puro.
+- `trivy config` sem `--skip-check-update` tenta baixar o bundle OCI de checks **a cada
+  execução**. Offline isso custa ~7s e um `ERROR` antes de cair no bundle embutido. A flag
+  corta a tentativa de rede por completo — é o que garante o contrato offline, não o cache.
+- O trivy **embute** os checks no binário e cai neles quando o registry está inacessível
+  (`Falling back to embedded checks`). Por isso a camada funciona offline mesmo com
+  `cache/trivy` vazio. Não reportar "trivy precisa de rede" — é falso.
+- No Windows o download OCI do trivy quebra quando o diretório temporário tem espaço ou está
+  em outro drive: ele baixa para `F:\...` e depois tenta abrir `/...` (perde a letra do drive).
+  Cai no bundle embutido e ainda sai com `rc=0`. **Nunca inferir sucesso do exit code** —
+  conferir se `cache/trivy/policy` existe.
 - Não habilitar os scanners `vuln` e `secret` do trivy: duplicam osv-scanner e gitleaks.
 - `gitleaks dir` não respeita `.gitignore`. O `secscan.py` já gera um TOML temporário com
   `[extend] useDefault = true` e `[[allowlists]] paths` para ignorar `node_modules`, `.venv`,

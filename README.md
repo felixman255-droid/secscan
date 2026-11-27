@@ -80,8 +80,9 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 bash install.sh
 ```
 
-Cria `bin/` (gitleaks + osv-scanner + trivy portáteis) e `.venv/` (semgrep isolado). Nada é
-instalado no sistema — só arquivos nesta pasta.
+Cria `bin/` (gitleaks + osv-scanner + trivy portáteis), `.venv/` (semgrep isolado) e, quando
+possível, `cache/trivy/` (bundle de checks do trivy). Nada é instalado no sistema — só arquivos
+nesta pasta.
 
 Os três binários são conferidos contra o **SHA-256 oficial** da release fixada antes de serem
 usados. Se o hash não bater, o instalador aborta e descarta o arquivo — não existe caminho que
@@ -90,6 +91,12 @@ aceite um binário não verificado. Os hashes estão embutidos nos scripts, um p
 
 Ao final, os 9 rulesets do semgrep são pré-baixados para o cache local, para que a primeira
 execução já funcione offline.
+
+O trivy recebe `--cache-dir` apontando para `cache/trivy` em vez do padrão global
+(`~/.cache/trivy` ou `%LOCALAPPDATA%\trivy`), para não escrever fora desta pasta. O instalador
+tenta pré-aquecer esse cache, mas **isso não é requisito**: o trivy 0.76 embute os checks no
+próprio binário e cai neles quando não há rede, e o `secscan` passa `--skip-check-update` para
+nunca tentar baixar durante a varredura. A camada funciona offline com o cache vazio.
 
 ## Uso
 
@@ -200,9 +207,10 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-69 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+75 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
 conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore`, detecção de IaC,
-retenção de relatório sensível e geração de SARIF.
+montagem do comando do trivy (globs de exclusão e flag offline), retenção de relatório sensível
+e geração de SARIF.
 O parsing é feito em funções puras justamente para poder ser testado sem rodar os binários.
 
 ## Integração com CI
@@ -230,6 +238,10 @@ publica o SARIF no GitHub Security tab e só falha depois do upload. Copie para
 - **A camada de infraestrutura cobre só o que existe em arquivo.** Dockerfile, compose, `.tf`
   e manifesto k8s versionado. Infra provisionada por console, ou imagem construída fora do
   repositório, fica invisível.
+- **O trivy pode deixar de ver IaC dentro de pastas de dependência.** `node_modules/`,
+  `vendor/` e `.terraform/` costumam trazer Dockerfiles de exemplo; o `secscan` os exclui de
+  propósito para não reportar infra de terceiros. Se você mantém IaC versionado dentro de uma
+  dessas pastas, ele não será escaneado.
 
 ## Segurança dos dados
 

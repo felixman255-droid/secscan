@@ -127,6 +127,13 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
 - `trivy config` reporta PASS e FAIL no mesmo array. Filtrar por `Status == "FAIL"`.
 - `trivy config` usa `CauseMetadata.StartLine`, que pode estar ausente em regra de arquivo
   inteiro (ex. "no HEALTHCHECK").
+- `trivy config --skip-dirs` casa por glob: nome simples só casa na raiz e deixa
+  `apps/web/node_modules` passar. Usar `**/node_modules`.
+- `trivy config` sem `--skip-check-update` tenta baixar o bundle OCI a cada execução (~7s +
+  `ERROR` offline). O trivy embute os checks e cai neles quando não há rede, então a camada
+  funciona offline mesmo com cache vazio.
+- No Windows o download OCI quebra com espaço no caminho temporário e ainda sai com `rc=0`.
+  Nunca inferir sucesso pelo exit code; conferir `cache/trivy/policy`.
 
 ## Uso autorizado
 

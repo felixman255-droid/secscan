@@ -230,12 +230,16 @@ def parse_semgrep(data):
 
 
 def normalize_paths(findings, target):
-    """Deixa os caminhos relativos ao alvo e normaliza separadores."""
+    """Deixa os caminhos relativos ao alvo e normaliza separadores.
+
+    Casa pelo prefixo terminado em barra: '/repo' nao deve mutilar '/repo2/app.py'.
+    """
     t = str(target).replace("\\", "/").rstrip("/")
+    prefix = t + "/"
     for f in findings:
         p = str(f.get("path") or "").replace("\\", "/")
-        if p.startswith(t):
-            p = p[len(t):].lstrip("/")
+        if p.startswith(prefix):
+            p = p[len(prefix):]
         f["path"] = p or "."
     return findings
 

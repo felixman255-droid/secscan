@@ -170,6 +170,11 @@ class TestPaths(unittest.TestCase):
         f = [{"path": "", "tool": "t", "rule": "r"}]
         self.assertEqual(s.normalize_paths(f, Path("/repo"))[0]["path"], ".")
 
+    def test_sibling_directory_with_common_prefix_is_preserved(self):
+        f = [{"path": "/repo2/app.py", "tool": "t", "rule": "r"}]
+        out = s.normalize_paths(f, Path("/repo"))
+        self.assertEqual(out[0]["path"], "/repo2/app.py")
+
 
 # ------------------------------------------------------------------ dedupe
 

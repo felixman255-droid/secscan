@@ -402,7 +402,7 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-119 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+146 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
 conteúdo, baseline (inclusive portabilidade do id de regra local entre caminhos **e** entre
 Windows e POSIX), detecção de stack em monorepo, allowlist do gitleaks (sem herdar `.gitignore`),
 detecção de IaC (inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do

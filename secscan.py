@@ -158,7 +158,7 @@ def secret_context(item):
     match, secret = str(item.get("Match") or ""), str(item.get("Secret") or "")
     if secret:
         match = match.replace(secret, "REDACTED")
-    return " ".join(match.split())[:200] or None
+    return " ".join(match.split()) or None
 
 
 def parse_gitleaks(data):
@@ -296,7 +296,7 @@ def strip_rule_prefix(check_id, configs, **kw):
 
 
 def _snippet(texto):
-    limpo = " ".join((texto or "").split())[:200]
+    limpo = " ".join((texto or "").split())  # inteiro: vai para um hash
     return None if limpo in ("", "requires login") else limpo
 
 

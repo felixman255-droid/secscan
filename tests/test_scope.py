@@ -155,6 +155,10 @@ class TestBaselineIdentity(unittest.TestCase):
         b = s.parse_gitleaks([dict(base, Match="K=valor-qualquer", Secret="valor-qualquer")])
         self.assertEqual(a[0]["snippet"], b[0]["snippet"])
 
+    def test_change_far_into_a_long_line_changes_identity(self):
+        a, b = ("x" * 500 + fim for fim in ("seguro()", "perigoso()"))
+        self.assertNotEqual(s._snippet(a), s._snippet(b))
+
     def test_semgrep_without_login_reads_the_code(self):
         with tempfile.TemporaryDirectory() as td:
             alvo = Path(td) / "a.js"

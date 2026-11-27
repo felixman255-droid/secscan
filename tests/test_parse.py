@@ -4,7 +4,7 @@ import json
 import sys
 import tempfile
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import secscan as s  # noqa: E402
@@ -214,45 +214,71 @@ class TestSemgrep(unittest.TestCase):
 
 
 class TestRuleId(unittest.TestCase):
-    """Id de regra local nao pode carregar o caminho absoluto: quebra o baseline."""
+    """Id de regra local nao pode carregar o caminho absoluto: quebra o baseline.
 
-    def test_local_config_namespace_is_parent_dir(self):
-        with tempfile.TemporaryDirectory() as td:
-            cfg = Path(td) / "rule.yml"
-            cfg.write_text("rules: []", encoding="utf-8")
-            ns = s.rule_namespace(str(cfg))
-            self.assertTrue(ns)
-            for ch in (":", "\\", "/", " "):
-                self.assertNotIn(ch, ns)
+    O prefixo tem que ser calculado com o sabor de caminho da plataforma que
+    roda o semgrep. Testar so com `Path` faz o teste passar no Windows e falhar
+    no Linux (foi o que aconteceu no commit 2509e0a), por isso PurePosixPath e
+    PureWindowsPath aparecem explicitamente.
+    """
 
-    def test_windows_path_with_space(self):
-        ns = s.rule_namespace(r"C:\a b\rules\x.yml")
-        self.assertTrue(ns.endswith("ab.rules"))
-        self.assertNotIn(":", ns)
-        self.assertNotIn("\\", ns)
+    def test_posix_prefix_strips_leading_slash(self):
+        # semgrep: ".".join(("/", "tmp", "x")).lstrip("./") == "tmp.x"
+        self.assertEqual(s.rule_prefix("/tmp/x/rule.yml", cwd="/work",
+                                       path_cls=PurePosixPath), "tmp.x.")
 
-    def test_registry_has_no_namespace(self):
-        self.assertIsNone(s.rule_namespace("p/default"))
+    def test_posix_prefix_is_relative_to_cwd(self):
+        self.assertEqual(s.rule_prefix("/work/proj/rule.yml", cwd="/work",
+                                       path_cls=PurePosixPath), "proj.")
+
+    def test_windows_prefix_keeps_drive_and_drops_separators(self):
+        self.assertEqual(s.rule_prefix(r"C:\a b\rules\x.yml", cwd=r"D:\w",
+                                       path_cls=PureWindowsPath), "C.ab.rules.")
+
+    def test_bare_filename_has_no_prefix(self):
+        self.assertEqual(s.rule_prefix("rule.yml", cwd="/work",
+                                       path_cls=PurePosixPath), "")
+
+    def test_registry_has_no_prefix(self):
+        self.assertEqual(s.rule_prefix("p/default"), "")
         self.assertEqual(s.strip_rule_prefix("python.lang.x.eval", ["p/default"]),
                          "python.lang.x.eval")
 
     def test_same_rule_in_different_dirs_gets_same_id(self):
-        a = s.strip_rule_prefix(s.rule_namespace("/x/rule.yml") + ".eval-detected", ["/x/rule.yml"])
-        b = s.strip_rule_prefix(s.rule_namespace("/y/rule.yml") + ".eval-detected", ["/y/rule.yml"])
-        self.assertEqual(a, "eval-detected")
-        self.assertEqual(b, "eval-detected")
+        for flavor, a, b, cwd in (
+            (PurePosixPath, "/x/rule.yml", "/y/rule.yml", "/work"),
+            (PureWindowsPath, r"C:\x\rule.yml", r"C:\y\rule.yml", r"D:\w"),
+        ):
+            ida = s.rule_prefix(a, cwd=cwd, path_cls=flavor) + "eval-detected"
+            idb = s.rule_prefix(b, cwd=cwd, path_cls=flavor) + "eval-detected"
+            self.assertEqual(s.strip_rule_prefix(ida, [a], cwd=cwd, path_cls=flavor),
+                             "eval-detected")
+            self.assertEqual(s.strip_rule_prefix(idb, [b], cwd=cwd, path_cls=flavor),
+                             "eval-detected")
 
     def test_parse_semgrep_applies_strip(self):
         with tempfile.TemporaryDirectory() as td:
             cfg = Path(td) / "regras.yml"
             cfg.write_text("rules: []", encoding="utf-8")
-            ns = s.rule_namespace(str(cfg))
-            data = {"results": [{"check_id": f"{ns}.test-eval", "path": "a.py",
+            pref = s.rule_prefix(str(cfg))
+            self.assertTrue(pref, "prefixo vazio: o teste nao provaria nada")
+            data = {"results": [{"check_id": f"{pref}test-eval", "path": "a.py",
                                  "start": {"line": 1},
                                  "extra": {"severity": "ERROR", "message": "m"}}]}
             out = s.parse_semgrep(data, [str(cfg)])
             self.assertEqual(out[0]["rule"], "test-eval")
             self.assertEqual(out[0]["detail"], "test-eval")
+
+    def test_matches_semgrep_implementation_when_available(self):
+        """Golden test: se o semgrep mudar a regra, o baseline quebra em silencio."""
+        try:
+            from semgrep.rule_lang import convert_config_id_to_prefix
+        except ImportError:
+            self.skipTest("semgrep nao instalado (CI roda sem dependencias)")
+        with tempfile.TemporaryDirectory() as td:
+            cfg = str(Path(td) / "regras.yml")
+            Path(cfg).write_text("rules: []", encoding="utf-8")
+            self.assertEqual(s.rule_prefix(cfg), convert_config_id_to_prefix(cfg))
 
 
 class TestSemgrepFailure(unittest.TestCase):

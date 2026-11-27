@@ -239,26 +239,37 @@ def parse_osv(data):
     return out
 
 
-def rule_namespace(cfg):
-    """Prefixo que o semgrep cola no id de regras de arquivo local.
+def rule_prefix(cfg, cwd=None, path_cls=None):
+    """Prefixo exato que o semgrep prepende ao id de uma regra de arquivo local.
 
-    Com `--config caminho/regras.yml` o check_id sai como
-    `<diretorio-sanitizado>.<id-da-regra>`; com ruleset de registry (`p/default`)
-    sai o id puro. O diretorio entra no id, e portanto no fingerprint: sem
-    remover o prefixo, um baseline gravado em uma maquina nao casa em outra.
+    Espelha `convert_config_id_to_prefix` (semgrep/rule_lang.py): relativiza ao
+    cwd quando possivel, une as partes do diretorio com ponto, remove
+    separadores iniciais com `lstrip("./")` e **apaga** os caracteres fora de
+    `[A-Za-z0-9._-]`. O `lstrip` e o que faz `/tmp/x/regras.yml` virar
+    `tmp.x.` no Linux e `F:\\x\\regras.yml` virar `F.x.` no Windows — chutar
+    "troca separador por ponto" erra o POSIX e derruba o baseline.
     """
     if not cfg or cfg.startswith("p/") or "://" in cfg:
-        return None
-    parent = str(Path(cfg).resolve().parent)
-    parent = re.sub(r"\s+", "", parent)
-    return re.sub(r"[^A-Za-z0-9._-]+", ".", parent)
+        return ""
+    cls = path_cls or Path
+    p = cls(cfg)
+    base = cls(cwd) if cwd is not None else (Path.cwd() if cls is Path else None)
+    if base is not None:
+        try:
+            p = p.relative_to(base)
+        except ValueError:
+            pass
+    prefix = ".".join(p.parts[:-1]).lstrip("./").lstrip(".")
+    if prefix:
+        prefix += "."
+    return re.sub(r"[^a-zA-Z0-9._-]", "", prefix)
 
 
-def strip_rule_prefix(check_id, configs):
+def strip_rule_prefix(check_id, configs, **kw):
     for cfg in configs:
-        ns = rule_namespace(cfg)
-        if ns and check_id.startswith(ns + "."):
-            return check_id[len(ns) + 1:]
+        pref = rule_prefix(cfg, **kw)
+        if pref and check_id.startswith(pref):
+            return check_id[len(pref):]
     return check_id
 
 

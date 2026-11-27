@@ -238,10 +238,16 @@ com a redação ativa — o fingerprint cai no índice de ocorrência dentro do 
 
 Regra local (`--semgrep-config examples/compose-rules.yml`) tem um detalhe que quebrava o
 baseline: o semgrep monta o id como `<diretório-da-config>.<id-da-regra>`, com o caminho
-absoluto sanitizado dentro. Como o id entra no fingerprint, um `.secscanignore` gravado em uma
-máquina não casava em outra — todo achado virava "novo". O secscan remove esse prefixo e guarda
-só o id da regra (`test-eval`, não `F.TemporariosdoGabriel.projeto.test-eval`), o que também
-deixa a coluna **Regra** do relatório legível.
+sanitizado dentro. Como o id entra no fingerprint, um `.secscanignore` gravado em uma máquina
+não casava em outra — todo achado virava "novo". O secscan remove esse prefixo e guarda só o id
+da regra (`test-eval`, não `F.TemporariosdoGabriel.projeto.test-eval`), o que também deixa a
+coluna **Regra** do relatório legível.
+
+A sanitização não é "trocar separador por ponto": o semgrep relativiza ao diretório de trabalho
+quando o arquivo está abaixo dele, remove os separadores iniciais (`lstrip("./")`) e **apaga**
+os caracteres fora de `[A-Za-z0-9._-]`. Por isso `/tmp/x/regras.yml` vira `tmp.x.` no Linux e
+`C:\x\regras.yml` vira `C.x.` no Windows. Chutar a regra acerta uma plataforma e erra a outra —
+e o erro é silencioso, porque o strip que não casa simplesmente mantém o id completo.
 
 ## Silenciar ruído: três níveis, do mais local ao mais amplo
 
@@ -344,16 +350,23 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-108 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
-conteúdo, baseline (inclusive portabilidade do id de regra local entre caminhos), detecção de
-stack em monorepo, allowlist do gitleaks (sem herdar `.gitignore`), detecção de IaC
-(inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do trivy, montagem
+111 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+conteúdo, baseline (inclusive portabilidade do id de regra local entre caminhos **e** entre
+Windows e POSIX), detecção de stack em monorepo, allowlist do gitleaks (sem herdar `.gitignore`),
+detecção de IaC (inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do
+trivy, montagem
 do comando do trivy (globs de exclusão e flag offline), validação de `--semgrep-config` local
 (ausente **e** inválida), seção de aceitos por baseline no relatório,
 modos de execução do gitleaks (histórico + working tree), escolha de ruleset padrão,
 retenção de relatório sensível, geração de SARIF e os invariantes do contrato (cache hermético,
 sem pré-aquecimento).
 O parsing é feito em funções puras justamente para poder ser testado sem rodar os binários.
+
+O CI roda a suíte em `ubuntu-latest`, então o teste que passar no Windows pode falhar no Linux
+por motivo bobo. Regra da casa: teste que envolve caminho **não** usa o `Path` da plataforma
+para montar a expectativa — usa `PurePosixPath` ou `PureWindowsPath` explicitamente, e valida os
+dois formatos em qualquer máquina. Um teste que só passa onde foi escrito é pior que teste
+nenhum, porque dá confiança falsa na hora do push.
 
 ## Contrato do projeto
 

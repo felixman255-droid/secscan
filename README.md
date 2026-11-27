@@ -80,9 +80,8 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 bash install.sh
 ```
 
-Cria `bin/` (gitleaks + osv-scanner + trivy portáteis), `.venv/` (semgrep isolado) e, quando
-possível, `cache/trivy/` (bundle de checks do trivy). Nada é instalado no sistema — só arquivos
-nesta pasta.
+Cria `bin/` (gitleaks + osv-scanner + trivy portáteis) e `.venv/` (semgrep isolado). Nada é
+instalado no sistema — só arquivos nesta pasta.
 
 Os três binários são conferidos contra o **SHA-256 oficial** da release fixada antes de serem
 usados. Se o hash não bater, o instalador aborta e descarta o arquivo — não existe caminho que
@@ -92,11 +91,19 @@ aceite um binário não verificado. Os hashes estão embutidos nos scripts, um p
 Ao final, os 9 rulesets do semgrep são pré-baixados para o cache local, para que a primeira
 execução já funcione offline.
 
-O trivy recebe `--cache-dir` apontando para `cache/trivy` em vez do padrão global
-(`~/.cache/trivy` ou `%LOCALAPPDATA%\trivy`), para não escrever fora desta pasta. O instalador
-tenta pré-aquecer esse cache, mas **isso não é requisito**: o trivy 0.76 embute os checks no
-próprio binário e cai neles quando não há rede, e o `secscan` passa `--skip-check-update` para
-nunca tentar baixar durante a varredura. A camada funciona offline com o cache vazio.
+O trivy funciona de forma diferente, e de propósito. Ele recebe `--cache-dir` apontando para
+`cache/trivy` — que fica **vazio**, porque o instalador não pré-aquece nada — junto com
+`--skip-check-update`. Nesse estado o `trivy config` usa o bundle de checks **embutido no
+binário 0.76.2**, sem tocar na rede. Isso dá três garantias de uma vez:
+
+- **offline de verdade** — nenhuma tentativa de download durante a varredura;
+- **determinismo** — os checks ficam atrelados à versão fixada do binário, iguais em Windows,
+  Linux e macOS, e imunes a um cache quente de outra versão do trivy no sistema;
+- **isolamento** — nada é escrito em `~/.cache/trivy` nem em `%LOCALAPPDATA%\trivy`.
+
+Pré-aquecer o bundle OCI seria pior: o download quebra no Windows quando o caminho temporário
+tem espaço, então Linux/macOS usariam o bundle OCI e o Windows cairia no embutido — máquinas
+diferentes passariam a reportar achados diferentes.
 
 ## Uso
 

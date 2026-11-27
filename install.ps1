@@ -77,20 +77,12 @@ foreach ($pack in @("p/default", "p/nodejs", "p/python", "p/golang",
   else { Write-Warning "  $pack nao pode ser baixado agora (sera buscado na primeira execucao)" }
 }
 
-# Pre-aquece o bundle de checks do trivy no cache LOCAL da skill (nao em
-# %LOCALAPPDATA%). O trivy 0.76 embute os checks no binario e cai neles quando
-# o registry esta inacessivel, entao isto nao e requisito de funcionamento
-# offline - serve para usar o bundle mais recente em vez do embutido no build.
-Write-Host "> pre-cache dos checks do trivy (opcional)"
-$trvCache = Join-Path $here "cache\trivy"
-New-Item -ItemType Directory -Force -Path $trvCache | Out-Null
-$emptyDir = Join-Path $tmp "empty"
-New-Item -ItemType Directory -Force -Path $emptyDir | Out-Null
-& (Join-Path $bin "trivy.exe") config --cache-dir $trvCache --quiet --skip-version-check $emptyDir *> $null
-# Nao confiar no exit code: quando o download falha o trivy cai no bundle
-# embutido e ainda sai com 0. Conferir se o cache realmente tem conteudo.
-if (Test-Path (Join-Path $trvCache "policy")) { Write-Host "  bundle em cache\trivy" }
-else { Write-Warning "  checks nao baixados agora; o trivy usa o bundle embutido (funciona offline)" }
+# O bundle de checks do trivy NAO e pre-aquecido de proposito.
+# `trivy config` roda com --skip-check-update e --cache-dir apontando para
+# cache\trivy (vazio), entao ele usa sempre o bundle EMBUTIDO no binario
+# 0.76.2 - identico em Windows, Linux e macOS. Pre-aquecer criaria divergencia:
+# Linux/macOS usariam o bundle OCI e o Windows (bug de path no download) cairia
+# no embutido, gerando achados diferentes entre maquinas.
 
 Remove-Item -Recurse -Force $tmp
 

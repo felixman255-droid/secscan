@@ -130,10 +130,12 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
 - `trivy config --skip-dirs` casa por glob: nome simples só casa na raiz e deixa
   `apps/web/node_modules` passar. Usar `**/node_modules`.
 - `trivy config` sem `--skip-check-update` tenta baixar o bundle OCI a cada execução (~7s +
-  `ERROR` offline). O trivy embute os checks e cai neles quando não há rede, então a camada
-  funciona offline mesmo com cache vazio.
+  `ERROR` offline). Com a flag, ele lê o cache se existir e cai no bundle embutido se estiver
+  vazio. O `secscan` usa `--cache-dir` em `cache/trivy` **sem pré-aquecer**, então o bundle
+  embutido é usado sempre, igual em qualquer SO.
 - No Windows o download OCI quebra com espaço no caminho temporário e ainda sai com `rc=0`.
-  Nunca inferir sucesso pelo exit code; conferir `cache/trivy/policy`.
+  Nunca inferir sucesso pelo exit code. Não se contorna `TMP`/`TEMP`: o resultado com o bundle
+  embutido já é correto e determinístico.
 
 ## Uso autorizado
 

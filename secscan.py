@@ -528,6 +528,11 @@ def trivy_cmd(target, outdir):
            # Offline vira ERROR + ~7s de espera antes de cair no bundle
            # embutido no binario. A flag corta a tentativa de rede por completo.
            "--skip-check-update",
+           # --cache-dir + --skip-check-update determinam o conjunto de checks:
+           # com o cache vazio o trivy usa o bundle EMBUTIDO no binario, igual
+           # em Windows/Linux/macOS. Apontar para cache local (em vez do global
+           # %LOCALAPPDATA%\trivy) tambem impede que um cache quente de outra
+           # versao do trivy mude os achados. Nao pre-aquecer: ver install.sh.
            "--cache-dir", str(TRIVY_CACHE)]
     for d in SKIP_DIRS:
         # "**/" e obrigatorio: nome simples so casa no nivel raiz, deixando

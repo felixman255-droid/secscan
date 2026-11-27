@@ -114,21 +114,12 @@ for pack in p/default p/nodejs p/python p/golang p/java p/ruby p/php p/rust p/cs
   fi
 done
 
-# Pre-aquece o bundle de checks do trivy no cache LOCAL da skill (nao em
-# ~/.cache/trivy). O trivy 0.76 embute os checks no binario e cai neles quando
-# o registry esta inacessivel, entao isto nao e requisito de funcionamento
-# offline - serve para usar o bundle mais recente em vez do embutido no build.
-echo "> pre-cache dos checks do trivy (opcional)"
-TRV_CACHE="$HERE/cache/trivy"
-mkdir -p "$TRV_CACHE" "$TMP/empty"
-# Nao confiar no exit code: quando o download falha o trivy cai no bundle
-# embutido e ainda sai com 0. Conferir se o cache realmente tem conteudo.
-"$BIN/trivy" config --cache-dir "$TRV_CACHE" --quiet --skip-version-check "$TMP/empty" >/dev/null 2>&1 || true
-if [ -d "$TRV_CACHE/policy" ]; then
-  echo "  bundle em cache/trivy"
-else
-  echo "  aviso: checks nao baixados agora; o trivy usa o bundle embutido (funciona offline)" >&2
-fi
+# O bundle de checks do trivy NAO e pre-aquecido de proposito.
+# `trivy config` roda com --skip-check-update e --cache-dir apontando para
+# cache/trivy (vazio), entao ele usa sempre o bundle EMBUTIDO no binario
+# 0.76.2 - identico em Windows, Linux e macOS. Pre-aquecer criaria divergencia:
+# Linux/macOS usariam o bundle OCI e o Windows (bug de path no download) cairia
+# no embutido, gerando achados diferentes entre maquinas.
 
 chmod +x "$HERE/secscan.sh"
 echo ""

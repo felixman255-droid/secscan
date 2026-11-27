@@ -159,13 +159,17 @@ config local não tem o peso de um `eval()` numa rota HTTP.
 - `trivy config` sem `--skip-check-update` tenta baixar o bundle OCI de checks **a cada
   execução**. Offline isso custa ~7s e um `ERROR` antes de cair no bundle embutido. A flag
   corta a tentativa de rede por completo — é o que garante o contrato offline, não o cache.
-- O trivy **embute** os checks no binário e cai neles quando o registry está inacessível
-  (`Falling back to embedded checks`). Por isso a camada funciona offline mesmo com
-  `cache/trivy` vazio. Não reportar "trivy precisa de rede" — é falso.
+- Com `--skip-check-update`, o trivy **lê o cache se existir** e só cai no bundle embutido
+  quando o cache está vazio. O `secscan` aponta `--cache-dir` para `cache/trivy` e **não
+  pré-aquece**: cache vazio + flag = bundle embutido sempre, igual em qualquer SO. Se alguém
+  "otimizar" pre-aquecendo, Windows (bug de path no download) passa a divergir de Linux/macOS.
+- Não reportar "trivy precisa de rede". Ele embute os checks e funciona offline com o cache
+  vazio — verificado: cache inexistente + registry inválido ainda rende os mesmos achados.
 - No Windows o download OCI do trivy quebra quando o diretório temporário tem espaço ou está
-  em outro drive: ele baixa para `F:\...` e depois tenta abrir `/...` (perde a letra do drive).
-  Cai no bundle embutido e ainda sai com `rc=0`. **Nunca inferir sucesso do exit code** —
-  conferir se `cache/trivy/policy` existe.
+  em outro drive: baixa para `F:\...` e depois tenta abrir `/...` (perde a letra do drive).
+  Cai no bundle embutido e ainda sai com `rc=0`. **Nunca inferir sucesso do exit code.**
+  Por isso não se contorna `TMP`/`TEMP`: exigiria escrever fora da pasta da skill e o
+  resultado já é correto e determinístico com o bundle embutido.
 - Não habilitar os scanners `vuln` e `secret` do trivy: duplicam osv-scanner e gitleaks.
 - `gitleaks dir` não respeita `.gitignore`. O `secscan.py` já gera um TOML temporário com
   `[extend] useDefault = true` e `[[allowlists]] paths` para ignorar `node_modules`, `.venv`,

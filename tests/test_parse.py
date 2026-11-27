@@ -632,5 +632,36 @@ class TestTrivyCmd(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--output") + 1], str(Path("/out/trivy.json")))
 
 
+class TestHermeticContract(unittest.TestCase):
+    """Invariantes que valem mesmo com todos os outros testes verdes."""
+
+    def _installers(self):
+        root = Path(s.__file__).resolve().parent
+        for name in ("install.sh", "install.ps1"):
+            yield name, (root / name).read_text(encoding="utf-8")
+
+    def test_installers_do_not_prewarm_trivy_checks(self):
+        # Pre-aquecer o bundle OCI quebra a paridade entre SOs: o download
+        # falha no Windows (bug de path) e funciona em Linux/macOS, entao as
+        # maquinas passariam a usar bundles diferentes. O bundle embutido no
+        # binario e o unico conjunto de checks que e igual em todo lugar.
+        for name, text in self._installers():
+            for i, line in enumerate(text.splitlines(), 1):
+                code = line.strip()
+                if not code or code.startswith("#"):
+                    continue
+                low = code.lower()
+                self.assertFalse(
+                    "trivy" in low and " config" in low,
+                    f"{name}:{i} invoca 'trivy config' no instalador — "
+                    f"pre-aquecimento reintroduz divergencia entre SOs: {code}")
+
+    def test_trivy_cache_dir_is_not_the_global_default(self):
+        cache = str(s.TRIVY_CACHE).replace("\\", "/").lower()
+        for bad in ("appdata", ".cache/trivy"):
+            self.assertNotIn(bad, cache, f"cache do trivy fora da skill: {cache}")
+        self.assertIn(str(s.BASE).replace("\\", "/").lower(), cache)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

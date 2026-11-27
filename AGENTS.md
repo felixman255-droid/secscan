@@ -87,7 +87,9 @@ da linha, então mover código não faz o achado reaparecer.
 - **SAST aponta padrão, não prova exploração.** Antes de tratar como urgente, confirmar que o
   dado realmente chega do usuário até o ponto apontado. `eval()` lendo config local não tem o
   peso de `eval()` numa rota HTTP.
-- **Sem lockfile, a camada de dependências é pulada** — e é justamente a que mais rende.
+- **A camada de dependências precisa de lockfile ou `requirements.txt`.** Manifestos puros
+  (`pyproject.toml`, `package.json` sem lockfile ao lado) são ignorados — e é justamente a
+  camada que mais rende. Projeto Python com `requirements.txt` está coberto.
 
 ## Saídas geradas
 

@@ -103,7 +103,7 @@ No PowerShell: `& ".\secscan.cmd" "..\meu-projeto"`
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula |
 | `--no-stack-rules` | não adiciona os rulesets da stack detectada |
 | `--reveal-secrets` | não redigir segredos no JSON (necessário para revogar credencial) |
-| `--keep N` | quantos relatórios manter (padrão 20; `0` = infinito) |
+| `--keep N` | quantos relatórios manter (padrão 20; `0` = infinito). Relatórios marcados com `SENSIVEL.txt` são exceção: só o mais recente sobrevive |
 | `--allow-tool-failure` | não sair com código 2 quando uma ferramenta quebra |
 | `--no-secrets` `--no-deps` `--no-sast` | pula uma das camadas |
 | `-v` | mostra a saída das ferramentas |
@@ -204,9 +204,12 @@ publica o SARIF no GitHub Security tab e só falha depois do upload. Copie para
 
 - **SAST não prova exploração.** Aponta padrão de risco. Falso positivo é normal — calibre as
   regras com o tempo.
-- **A camada de dependências precisa de lockfile** (`package-lock.json`, `poetry.lock`,
-  `go.sum`, `composer.lock`...). Sem ele, o osv-scanner aparece como "pulado" — e é justamente
-  a camada que mais rende na prática.
+- **A camada de dependências precisa de lockfile ou `requirements.txt`.** O osv-scanner lê
+  `requirements.txt`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, `package-lock.json`,
+  `go.mod`, `Cargo.lock`, `pom.xml`, `Gemfile.lock` e `composer.lock`. Manifestos puros
+  (`pyproject.toml`, `package.json` sem lockfile ao lado) **são ignorados** — nesse caso a
+  camada aparece como "pulado", e é justamente a que mais rende na prática. Projeto Python
+  com só `requirements.txt` está coberto; projeto com só `pyproject.toml` não está.
 - **Não substitui pentest.** Isso pega o que já é conhecido e automatizável. Falha de lógica de
   negócio (usuário A acessando pedido do usuário B) só um humano com contexto encontra.
 
@@ -217,7 +220,10 @@ real — necessário quando a credencial precisa ser revogada — use `--reveal-
 a redação.
 
 Com `--reveal-secrets` ativo, o diretório do relatório recebe um marcador `SENSIVEL.txt` e o
-console avisa. Nesse estado o relatório contém credenciais em texto claro:
+console avisa. A rotação de `--keep` trata esses diretórios de forma especial: **apenas o mais
+recente é preservado**, os anteriores são apagados mesmo dentro da janela de retenção, porque
+acumular dumps de credencial em texto claro só aumenta a exposição sem ganho. Nesse estado o
+relatório contém credenciais em texto claro:
 
 - não commite, não anexe em ticket, não envie a serviço externo;
 - se um agente de IA estiver operando, ele **não deve abrir** `gitleaks.json` — o valor iria

@@ -59,7 +59,7 @@ projeto do usuário com relatórios. Sempre entre aspas: caminhos no Windows cos
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula |
 | `--no-stack-rules` | não adiciona os rulesets da stack detectada |
 | `--reveal-secrets` | não redigir segredos no JSON |
-| `--keep N` | quantos relatórios manter (padrão 20) |
+| `--keep N` | quantos relatórios manter (padrão 20). Diretórios com `SENSIVEL.txt` são reduzidos a 1 |
 | `--allow-tool-failure` | não sair com 2 quando uma ferramenta quebra |
 | `--no-secrets` / `--no-deps` / `--no-sast` | pula uma camada |
 | `-v` | mostra a saída das ferramentas |
@@ -126,9 +126,12 @@ config local não tem o peso de um `eval()` numa rota HTTP.
 ## Limites a comunicar ao usuário
 
 - SAST não prova exploração — aponta padrão de risco, e falso positivo é normal.
-- A camada de dependências só funciona se houver lockfile (`package-lock.json`, `poetry.lock`,
-  `go.sum`, `composer.lock`). Sem lockfile, o osv-scanner aparece como "pulado" e o projeto
-  fica cego justamente na camada que mais rende.
+- A camada de dependências precisa de lockfile **ou `requirements.txt`**. Suportados:
+  `requirements.txt`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, `package-lock.json`, `go.mod`,
+  `Cargo.lock`, `pom.xml`, `Gemfile.lock`, `composer.lock`. Manifestos puros
+  (`pyproject.toml`, `package.json` sem lockfile ao lado) **não são lidos** — nesse caso o
+  osv-scanner aparece como "pulado". Projeto Python só com `requirements.txt` está coberto;
+  só com `pyproject.toml` não está. Não avise "SCA cego" sem checar qual dos dois existe.
 - Isso não substitui pentest: falha de lógica de negócio (usuário A acessando dado do usuário B)
   só um humano com contexto do domínio encontra.
 

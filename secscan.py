@@ -180,13 +180,16 @@ def parse_osv(data):
                     "pkg": f"{name} {ver}", "snippet": None}
 
             # mapa advisory -> primeira versao corrigida indicada pelo OSV.
-            # eventos "fixed" as vezes trazem hash de commit em vez de versao;
-            # esses nao servem como instrucao de upgrade e sao descartados.
+            # Ranges do tipo "GIT" carregam commit/ref, nao versao de pacote:
+            # sao ignorados por completo antes de qualquer heuristica, porque
+            # tanto hashes abreviados quanto refs/tags escapariam do filtro.
             fixmap = {}
             for v in pkg.get("vulnerabilities") or []:
                 fixes = []
                 for aff in v.get("affected") or []:
                     for rng in aff.get("ranges") or []:
+                        if str(rng.get("type", "")).upper() == "GIT":
+                            continue
                         for ev in rng.get("events") or []:
                             fx = ev.get("fixed")
                             if fx and not re.fullmatch(r"[0-9a-f]{40}", str(fx)):
@@ -663,8 +666,21 @@ def prune_reports(root: Path, keep: int):
         dirs = sorted([d for d in root.iterdir() if d.is_dir()], reverse=True)
     except OSError:
         return
+    survivors = dirs[:keep]
     for old in dirs[keep:]:
         shutil.rmtree(old, ignore_errors=True)
+
+    # Relatorios com SENSIVEL.txt guardam credencial em texto claro. Manter
+    # varios deles multiplica a superficie de exposicao sem nenhum ganho:
+    # so o mais recente sobrevive, mesmo dentro da janela de --keep.
+    kept_sensitive = False
+    for d in survivors:
+        if not (d / "SENSIVEL.txt").exists():
+            continue
+        if kept_sensitive:
+            shutil.rmtree(d, ignore_errors=True)
+        else:
+            kept_sensitive = True
 
 
 # ============================================================================

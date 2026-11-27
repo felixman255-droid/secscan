@@ -144,6 +144,51 @@ class TestOsv(unittest.TestCase):
         }]}
         self.assertIsNone(s.parse_osv(data)[0]["fix"])
 
+    def _osv_git_range(self, fixed_value, rtype="GIT"):
+        return {"results": [{
+            "source": {"path": "requirements.txt", "type": "lockfile"},
+            "packages": [{
+                "package": {"name": "flask", "version": "1.0.0", "ecosystem": "PyPI"},
+                "groups": [{"ids": ["PYSEC-2023-62"], "max_severity": "7.5"}],
+                "vulnerabilities": [{"id": "PYSEC-2023-62", "affected": [{
+                    "ranges": [{"type": rtype, "events": [
+                        {"introduced": "0"},
+                        {"fixed": fixed_value}]}],
+                }]}],
+            }],
+        }]}
+
+    def test_short_commit_hash_is_not_offered_as_fix_version(self):
+        # hashes abreviados (7-12 chars) passam pelo regex de 40 hex
+        out = s.parse_osv(self._osv_git_range("70f906c"))
+        self.assertIsNone(out[0]["fix"])
+
+    def test_git_tag_ref_is_not_offered_as_fix_version(self):
+        out = s.parse_osv(self._osv_git_range("refs/tags/v2.0.0"))
+        self.assertIsNone(out[0]["fix"])
+
+    def test_git_range_is_skipped_but_semver_range_still_used(self):
+        data = {"results": [{
+            "source": {"path": "requirements.txt", "type": "lockfile"},
+            "packages": [{
+                "package": {"name": "flask", "version": "1.0.0", "ecosystem": "PyPI"},
+                "groups": [{"ids": ["PYSEC-2023-62"], "max_severity": "7.5"}],
+                "vulnerabilities": [{"id": "PYSEC-2023-62", "affected": [{
+                    "ranges": [
+                        {"type": "GIT", "events": [
+                            {"introduced": "0"}, {"fixed": "70f906c"}]},
+                        {"type": "ECOSYSTEM", "events": [
+                            {"introduced": "0"}, {"fixed": "2.2.5"}]},
+                    ],
+                }]}],
+            }],
+        }]}
+        self.assertEqual(s.parse_osv(data)[0]["fix"], "2.2.5")
+
+    def test_ecosystem_range_still_yields_fix_version(self):
+        out = s.parse_osv(self._osv_git_range("2.2.5", rtype="ECOSYSTEM"))
+        self.assertEqual(out[0]["fix"], "2.2.5")
+
 
 # ----------------------------------------------------------------- semgrep
 
@@ -377,6 +422,55 @@ class TestGitignore(unittest.TestCase):
     def test_missing_gitignore_returns_empty(self):
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(s.gitignore_patterns(Path(td)), [])
+
+
+class TestPruneReports(unittest.TestCase):
+    def _mk(self, root, name, sensitive=False):
+        d = root / name
+        d.mkdir(parents=True)
+        (d / "relatorio.md").write_text("x", encoding="utf-8")
+        if sensitive:
+            (d / "SENSIVEL.txt").write_text("credenciais", encoding="utf-8")
+        return d
+
+    def test_removes_dirs_beyond_keep(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for n in ("2026-01-01_10-00-00", "2026-01-02_10-00-00",
+                      "2026-01-03_10-00-00"):
+                self._mk(root, n)
+            s.prune_reports(root, keep=2)
+            self.assertEqual(sorted(p.name for p in root.iterdir()),
+                             ["2026-01-02_10-00-00", "2026-01-03_10-00-00"])
+
+    def test_retains_only_newest_sensitive_report(self):
+        # relatorios com SENSIVEL.txt guardam credencial em texto claro:
+        # acumular varios amplia a exposicao, mesmo dentro da janela --keep
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._mk(root, "2026-01-01_10-00-00", sensitive=True)
+            self._mk(root, "2026-01-02_10-00-00", sensitive=True)
+            self._mk(root, "2026-01-03_10-00-00", sensitive=True)
+            s.prune_reports(root, keep=20)
+            self.assertEqual([p.name for p in root.iterdir()],
+                             ["2026-01-03_10-00-00"])
+
+    def test_non_sensitive_reports_are_not_pruned_by_sensitive_rule(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._mk(root, "2026-01-01_10-00-00")
+            self._mk(root, "2026-01-02_10-00-00")
+            self._mk(root, "2026-01-03_10-00-00", sensitive=True)
+            s.prune_reports(root, keep=20)
+            self.assertEqual(len(list(root.iterdir())), 3)
+
+    def test_keep_zero_disables_pruning(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._mk(root, "2026-01-01_10-00-00", sensitive=True)
+            self._mk(root, "2026-01-02_10-00-00", sensitive=True)
+            s.prune_reports(root, keep=0)
+            self.assertEqual(len(list(root.iterdir())), 2)
 
 
 if __name__ == "__main__":

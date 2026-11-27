@@ -692,37 +692,39 @@ def semgrep_failure(data, rc):
 
 
 def drop_excluded(findings, excluded):
-    """Remove achados das regras desativadas, casando pelo id normalizado.
+    """Separa os achados das regras desativadas e conta quantos cada uma rendeu.
 
-    O `--exclude-rule` do semgrep casa com o check_id cru — que, para config
-    local, carrega o prefixo do diretorio (`...custom.test-eval`). Passar so a
-    flag deixaria a regra ativa e o relatorio declarando o contrario. Filtrar
-    aqui garante que o id que aparece no relatorio e o mesmo que se desativa.
+    Age no resultado, nao na varredura: o `semgrep.json` bruto mantem a
+    evidencia, e o relatorio declara a exclusao com o numero de achados que ela
+    cobriu. Repassar `--exclude-rule` ao semgrep faria o contrario — a regra
+    sumiria antes de ser contada, o id teria que ser o cru (com prefixo de
+    caminho em config local) e um id errado passaria sem aviso.
     """
+    counts = {rid: 0 for rid in excluded}
     if not excluded:
-        return findings
-    dead = set(excluded)
-    return [f for f in findings if f["rule"] not in dead]
+        return findings, counts
+    kept = []
+    for f in findings:
+        if f["rule"] in counts:
+            counts[f["rule"]] += 1
+        else:
+            kept.append(f)
+    return kept, counts
 
 
-def semgrep_cmd(target, report, configs, exclude_rules=()):
-    """Comando do semgrep. `--exclude-rule` desliga uma regra pelo id, o que
-    `--config` sozinho nao permite quando o ruleset vem do registry (`p/...`).
-    """
+def semgrep_cmd(target, report, configs):
     cmd = [SEMGREP, "scan", "--json", "--output", str(report),
            "--quiet", "--metrics", "off", "--disable-version-check",
            "--no-git-ignore", "--timeout", "30"]
     for cfg in configs:
         cmd += ["--config", cfg]
-    for rid in exclude_rules:
-        cmd += ["--exclude-rule", rid]
     for d in ("node_modules", ".venv", "dist", "build", "target", "vendor"):
         cmd += ["--exclude", d]
     cmd.append(str(target))
     return cmd
 
 
-def scan_code(target, outdir, configs, verbose, exclude_rules=()):
+def scan_code(target, outdir, configs, verbose):
     if not SEMGREP.exists():
         return [], STATUS_FAIL, "semgrep nao instalado", 0.0
 
@@ -731,14 +733,14 @@ def scan_code(target, outdir, configs, verbose, exclude_rules=()):
         return [], STATUS_FAIL, f"config inexistente: {', '.join(missing)}", 0.0
 
     report = outdir / "semgrep.json"
-    cmd = semgrep_cmd(target, report, configs, exclude_rules)
+    cmd = semgrep_cmd(target, report, configs)
 
     rc, out, dt = run(cmd, "semgrep", stream=verbose)
     if not report.exists():
         return [], STATUS_FAIL, short(out.strip() or f"semgrep falhou (rc={rc})", 300), dt
     try:
         data = json.loads(report.read_text(encoding="utf-8") or "{}")
-        findings = drop_excluded(parse_semgrep(data, configs), exclude_rules)
+        findings = parse_semgrep(data, configs)
         fail = semgrep_failure(data, rc)
         if fail:
             return findings, STATUS_FAIL, short(f"semgrep: {fail}", 300), dt
@@ -814,9 +816,12 @@ def write_markdown(findings, ignored, meta, counts, outdir):
         lines.append(f"| {tool} | {label}{note} | {dt:.1f}s |")
 
     if meta.get("excluded"):
-        lines += ["", "> **Regras desativadas (`--exclude-rule`):** " +
-                  ", ".join(f"`{r}`" for r in meta["excluded"]) +
-                  ". Ausencia de achado delas **nao** e evidencia de codigo limpo —",
+        parts = []
+        for rid, n in meta["excluded"]:
+            parts.append(f"`{rid}`" + (f" — {n} achado(s) suprimido(s)" if n
+                                       else " — nenhum achado nesta execucao"))
+        lines += ["", "> **Regras desativadas (`--exclude-rule`):** " + "; ".join(parts) + ".",
+                  "> Ausencia de achado delas **nao** e evidencia de codigo limpo —",
                   "> o silencio e deliberado e esta registrado aqui para nao virar ponto cego."]
 
     lines += ["", "## Resumo", "", "| Severidade | Achados |", "|---|---|"]
@@ -888,7 +893,8 @@ def render(findings, ignored, meta, outdir, counts):
         print(f"\n  {C['red']}Varredura incompleta. Nao trate como limpo.{C['r']}")
 
     if meta.get("excluded"):
-        print(f"  {C['yel']}regras off{C['r']}   {', '.join(meta['excluded'])}")
+        off = ", ".join(f"{rid} ({n})" for rid, n in meta["excluded"])
+        print(f"  {C['yel']}regras off{C['r']}   {off}")
 
     print()
     if not findings:
@@ -1060,7 +1066,7 @@ def main():
 
     if not args.no_sast:
         print(f"  {C['dim']}> codigo (semgrep) - pode levar alguns minutos...{C['r']}")
-        f, st, msg, dt = scan_code(target, outdir, configs, args.verbose, exclude_rules)
+        f, st, msg, dt = scan_code(target, outdir, configs, args.verbose)
         findings += f
         tools.append(("semgrep", st, msg, dt))
 
@@ -1083,6 +1089,7 @@ def main():
                               "nenhum Dockerfile/k8s/.tf no projeto", 0.0))
 
     findings = dedupe(normalize_paths(findings, target))
+    findings, excluded_counts = drop_excluded(findings, exclude_rules)
     findings.sort(key=lambda f: (SEV_ORDER.get(f["sev"], 9), f["path"], f.get("line") or 0))
     assign_fingerprints(findings)
 
@@ -1112,7 +1119,8 @@ def main():
     meta = {
         "target": str(target), "name": target.name,
         "when": datetime.now().strftime("%d/%m/%Y %H:%M"),
-        "tools": tools, "excluded": exclude_rules,
+        "tools": tools,
+        "excluded": [(rid, excluded_counts.get(rid, 0)) for rid in exclude_rules],
     }
 
     write_markdown(active, ignored, meta, counts, outdir)

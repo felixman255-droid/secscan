@@ -58,7 +58,7 @@ projeto do usuário com relatórios. Sempre entre aspas: caminhos no Windows cos
 | `--write-baseline` | grava o baseline com os achados atuais e encerra |
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula. Caminho local inexistente marca a camada como FALHOU |
 | `--no-stack-rules` | não adiciona os rulesets da stack detectada |
-| `--exclude-rule ID` | desliga uma regra pelo id (o mesmo da coluna Regra do relatório); fica declarado no relatório |
+| `--exclude-rule ID` | desliga uma regra pelo id (o mesmo da coluna Regra do relatório); o relatório declara a exclusão e quantos achados ela cobriu |
 | `--reveal-secrets` | não redigir segredos no JSON |
 | `--keep N` | quantos relatórios manter (padrão 20). Diretórios com `SENSIVEL.txt` são reduzidos a 1 |
 | `--allow-tool-failure` | não sair com 2 quando uma ferramenta quebra |
@@ -106,6 +106,24 @@ arquivo do baseline.
 
 Sugerir baseline quando o usuário reclamar de achados repetidos, ou quando o volume for grande
 e a maior parte for conhecida.
+
+### Antes de aceitar: separar os três baldes
+
+Baseline é a última opção, não a primeira. O achado de SAST só orienta ação quando separado:
+
+| Balde | Como reconhecer | Tratamento |
+|---|---|---|
+| Ruído de regra | o padrão não se aplica à arquitetura (regra de XSS em template que não renderiza HTML de usuário) | `--exclude-rule` |
+| Verdadeiro em contexto seguro | o sink existe, mas a entrada é estática ou validada por whitelist | `# nosemgrep` no ponto, ou baseline |
+| Vulnerável acionável | dado externo chega ao sink sem sanitização | corrigir o código |
+
+Antes de gravar o baseline, agrupar por regra e ver a concentração:
+
+```bash
+jq -r '.results[].check_id' "<saída>"/semgrep.json | sort | uniq -c | sort -rn | head
+```
+
+Uma regra respondendo por metade dos achados é ruído de regra, não 25 exceções de contexto.
 
 ## Depois de rodar
 

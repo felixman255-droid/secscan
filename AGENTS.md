@@ -80,6 +80,18 @@ da linha, então mover código não faz o achado reaparecer — nem trocar a má
 regra local é guardado sem o caminho absoluto da config. Os aceitos aparecem no relatório na
 seção **Aceitos por baseline** (ferramenta, local, regra).
 
+Baseline é para **exceção de contexto**, não para repetição. Ruído de regra (o padrão não se
+aplica à arquitetura do projeto) se resolve com `--exclude-rule`, que o relatório declara junto
+com a contagem de achados suprimidos. Antes de gravar, medir a concentração:
+
+```bash
+jq -r '.results[].check_id' <saída>/semgrep.json | sort | uniq -c | sort -rn | head
+```
+
+Achado verdadeiro em contexto seguro (entrada estática, whitelist) é o que merece aceitação
+pontual; vulnerável acionável se corrige no código. Misturar os três numa taxa única de falso
+positivo não diz onde agir.
+
 ## Depois de rodar
 
 1. Ler o `relatorio.md` gerado (o caminho aparece no fim da saída).

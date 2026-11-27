@@ -130,7 +130,7 @@ No PowerShell: `& ".\secscan.cmd" "..\meu-projeto"`
 | `--write-baseline` | grava o baseline com os achados atuais e encerra |
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula |
 | `--no-stack-rules` | não adiciona os rulesets da stack detectada |
-| `--exclude-rule ID` | desliga uma regra pelo id (o da coluna **Regra** do relatório); o relatório declara quais estão off |
+| `--exclude-rule ID` | desliga uma regra pelo id (o da coluna **Regra** do relatório); o relatório declara a exclusão e quantos achados ela cobriu |
 | `--reveal-secrets` | não redigir segredos no JSON (necessário para revogar credencial) |
 | `--keep N` | quantos relatórios manter (padrão 20; `0` = infinito). Relatórios marcados com `SENSIVEL.txt` são exceção: só o mais recente sobrevive |
 | `--allow-tool-failure` | não sair com código 2 quando uma ferramenta quebra |
@@ -292,9 +292,16 @@ ponto. Não existe equivalente em arquivo de configuração quando o ruleset vem
 ./secscan.sh ../meu-projeto --exclude-rule python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
 ```
 
-O id é o mesmo que aparece na coluna **Regra** do relatório. A regra desligada fica declarada no
-topo do relatório e na saída do terminal — um silêncio que não aparece em lugar nenhum seria
-indistinguível de cobertura.
+O id é o mesmo que aparece na coluna **Regra** do relatório. A exclusão age no **resultado**, não
+na varredura: o `semgrep.json` bruto continua com os achados (a evidência não some) e o relatório
+declara quantos cada regra desligada suprimiu — `test-eval — 2 achado(s) suprimido(s)`. Se você
+esperava achados e o número vier zero, o id está errado: id que não casa nada passa em silêncio
+no semgrep, então esse zero é o único aviso que existe.
+
+Repassar `--exclude-rule` ao semgrep foi a primeira tentativa e está errado por três motivos: o
+`skipped_rules` do JSON vem sempre vazio (não há como contar o que foi suprimido), a flag casa
+com o `check_id` cru (que em config local carrega o prefixo do diretório) e um id inválido é
+aceito sem erro — o relatório anunciaria uma exclusão que nunca aconteceu.
 
 **4. Achado aceito — `.secscanignore`.** O baseline. Diferente dos três anteriores: age no
 resultado, não na varredura, então o achado continua sendo detectado e apenas não conta como
@@ -305,6 +312,21 @@ Um detalhe que pega as pessoas: **`tests/` e `test/` já são excluídos pelo Se
 Não é preciso `.semgrepignore` para eles — e vale saber que código dentro dessas pastas **nunca**
 é analisado, mesmo que não seja teste de verdade. `fixture/`, `spec/` e `src/` são varridos
 normalmente.
+
+### Os três baldes da triagem
+
+Achado de SAST só orienta ação quando separado em três — e o relatório já entrega a separação
+pronta:
+
+| Balde | Como reconhecer | Mecanismo |
+|---|---|---|
+| **Ruído de regra** | o padrão não se aplica à arquitetura (regra de XSS num template que não renderiza HTML de usuário) | `--exclude-rule` — seção **Regras desativadas**, com a contagem que ela cobria |
+| **Verdadeiro em contexto seguro** | o sink existe, mas a entrada é estática ou passa por whitelist | `# nosemgrep` no ponto ou `.secscanignore` — seção **Aceitos por baseline** |
+| **Vulnerável acionável** | dado externo chega ao sink sem sanitização | corrigir o código — tabela **Achados** |
+
+Uma taxa única de "falso positivo" mistura os três e não diz onde agir: ruído de regra pede
+`--exclude-rule`, contexto seguro pede aceitação pontual, e só o terceiro balde pede código. Os
+números de cada seção são o que separa os casos.
 
 ## Primeira execução em um projeto real
 

@@ -9,12 +9,12 @@ Três camadas — segredos, dependências e código-fonte — num único relató
 
 ```
   gitleaks       ok (1.0s)
-  osv-scanner    ok (4.1s)
-  semgrep        ok (10.6s)
+  osv-scanner    ok (4.3s)
+  semgrep        ok (12.4s)
 
   CRITICA     6
   ALTA       14
-  MEDIA      17
+  MEDIA      18
 
   * Segredo exposto: aws-access-token
     app.py:5
@@ -24,11 +24,14 @@ Três camadas — segredos, dependências e código-fonte — num único relató
 
 | Camada | Ferramenta | Pega o quê |
 |---|---|---|
-| Segredos | [gitleaks](https://github.com/gitleaks/gitleaks) 8.30 | token, chave de API, senha commitada |
-| Dependências | [osv-scanner](https://github.com/google/osv-scanner) 2.7 | CVE em biblioteca de terceiros, com CVSS real |
+| Segredos | [gitleaks](https://github.com/gitleaks/gitleaks) 8.30.1 | token, chave de API, senha commitada |
+| Dependências | [osv-scanner](https://github.com/google/osv-scanner) 2.7.1 | CVE em biblioteca de terceiros, com nota CVSS |
 | Código (SAST) | [semgrep](https://semgrep.dev) 1.187 | injeção SQL, `eval`, `shell=True`, cripto fraca, XSS |
 
 Todas gratuitas. Depois da primeira execução, rodam offline.
+
+As versões são fixas de propósito: o `secscan.py` depende do formato JSON de cada ferramenta.
+Trocar de versão exige revalidar o parsing com os testes.
 
 ## Compatibilidade com agentes
 
@@ -53,9 +56,6 @@ git clone https://github.com/felixman255-droid/secscan.git ~/.claude/skills/secs
 
 Por projeto, em vez de global: clonar em `.claude/skills/secscan` na raiz do repositório.
 Depois rodar o instalador uma vez dentro da pasta clonada.
-
-Para agentes que usam `AGENTS.md`, basta clonar na raiz do projeto — ou apontar a regra do
-agente para o arquivo.
 
 ## Instalação
 
@@ -89,19 +89,66 @@ No PowerShell: `& ".\secscan.cmd" "..\meu-projeto"`
 | Flag | Efeito |
 |---|---|
 | `--out DIR` | pasta de saída (padrão `security-report`) |
-| `--history` | gitleaks varre todo o histórico do git — mais lento, mas acha segredo que foi apagado |
-| `--semgrep-config p/...` | troca o ruleset (padrão `p/default`) |
+| `--history` | gitleaks varre todo o histórico do git — acha segredo que foi apagado |
+| `--baseline ARQ` | arquivo de achados aceitos (padrão `<alvo>/.secscanignore`) |
+| `--write-baseline` | grava o baseline com os achados atuais e encerra |
+| `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula |
+| `--no-stack-rules` | não adiciona os rulesets da stack detectada |
+| `--reveal-secrets` | não redigir segredos no JSON (necessário para revogar credencial) |
+| `--keep N` | quantos relatórios manter (padrão 20; `0` = infinito) |
+| `--allow-tool-failure` | não sair com código 2 quando uma ferramenta quebra |
 | `--no-secrets` `--no-deps` `--no-sast` | pula uma das camadas |
-| `--fail-on critica\|alta\|media\|baixa\|nunca` | severidade que faz sair com código 1 (padrão `alta`) |
+| `-v` | mostra a saída das ferramentas |
 
-O código de saída serve para CI: `0` passou, `1` achou algo na severidade limite.
+### Rulesets por stack
+
+Quando não se passa `--semgrep-config`, o secscan detecta a stack pelos arquivos na raiz do
+projeto e soma os rulesets correspondentes ao `p/default`:
+
+`package.json`/`package-lock.json` → `p/nodejs` · `requirements.txt`/`poetry.lock` → `p/python` ·
+`go.mod` → `p/golang` · `pom.xml` → `p/java` · `Gemfile` → `p/ruby` · `composer.json` → `p/php` ·
+`Cargo.toml` → `p/rust` · `*.csproj` → `p/csharp`
+
+Achados duplicados entre rulesets sobrepostos são removidos automaticamente.
 
 ## Saída
 
 Console resumido + `security-report/<timestamp>/` com:
 
-- `relatorio.md` — tabela completa por severidade, com instruções de correção
+- `relatorio.md` — estado de cada camada, tabela por severidade, instruções de correção
+- `secscan.sarif` — SARIF 2.1.0, para GitHub code scanning / GitLab / Azure DevOps
 - `gitleaks.json`, `osv.json`, `semgrep.json` — saída bruta de cada ferramenta
+
+## Baseline: o que faz a ferramenta sobreviver ao uso contínuo
+
+Sem baseline, a segunda execução reporta os mesmos 38 achados da primeira e você não consegue
+ver **o que é novo**. Na prática, o relatório vira ruído e ninguém mais lê.
+
+O baseline registra os achados que você decidiu aceitar. Aceitar tudo de uma vez:
+
+```bash
+./secscan.sh ../meu-projeto --write-baseline
+```
+
+Isso grava `<alvo>/.secscanignore` — commite esse arquivo junto com o projeto. A partir daí,
+só achados novos aparecem, e o código de saída reflete apenas eles.
+
+Para voltar a reportar um achado, apague a linha correspondente no `.secscanignore`.
+
+O fingerprint é calculado sobre `ferramenta + regra + caminho + índice de ocorrência`, **sem o
+número da linha** — então editar o arquivo e mover o código não faz o achado reaparecer.
+
+## Códigos de saída
+
+| Código | Significado |
+|---|---|
+| `0` | limpo |
+| `1` | achado na severidade definida em `--fail-on` (padrão `alta`) |
+| `2` | **alguma ferramenta falhou — varredura incompleta** |
+
+O código `2` existe porque um scanner de segurança que falha em silêncio é pior que um que
+quebra. Se o formato do JSON de uma ferramenta mudar, o secscan marca a camada como `FALHOU`
+em vez de reportar "nada encontrado".
 
 ## Como interpretar
 
@@ -117,20 +164,35 @@ O relatório aponta *onde*, não *se é explorável no seu caso*. Um `eval()` nu
 config local não é o mesmo que um `eval()` numa rota HTTP. Confirme o caminho do dado antes de
 tratar como urgente.
 
+## Testes
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v      # Linux/macOS
+.venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
+```
+
+33 testes cobrindo o parsing das três ferramentas, mapeamento de severidade, fingerprints,
+baseline e geração de SARIF. O parsing é feito em funções puras justamente para poder ser
+testado sem rodar os binários.
+
 ## Limites
 
 - **SAST não prova exploração.** Aponta padrão de risco. Falso positivo é normal — calibre as
   regras com o tempo.
 - **A camada de dependências precisa de lockfile** (`package-lock.json`, `poetry.lock`,
-  `go.sum`, `composer.lock`...). Sem ele, o osv-scanner fica cego — e é justamente a camada
-  que mais rende na prática.
+  `go.sum`, `composer.lock`...). Sem ele, o osv-scanner aparece como "pulado" — e é justamente
+  a camada que mais rende na prática.
 - **Não substitui pentest.** Isso pega o que já é conhecido e automatizável. Falha de lógica de
   negócio (usuário A acessando pedido do usuário B) só um humano com contexto encontra.
 
 ## Segurança dos dados
 
-O `gitleaks.json` contém o valor do segredo encontrado. `security-report/` está no
-`.gitignore` — não commite. Apague o relatório depois de revisar em máquina compartilhada.
+Os segredos são **redigidos** no JSON por padrão (`"Secret": "REDACTED"`). Para obter o valor
+real — necessário quando a credencial precisa ser revogada — use `--reveal-secrets`, que
+desliga a redação. Nesse caso o relatório passa a conter a credencial em texto claro: apague
+depois de usar.
+
+`security-report/` está no `.gitignore` — não commite.
 
 ## Uso autorizado
 

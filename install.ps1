@@ -10,7 +10,10 @@ New-Item -ItemType Directory -Force -Path $bin, $tmp | Out-Null
 $arm = $env:PROCESSOR_ARCHITECTURE -eq "ARM64"
 $glArch = if ($arm) { "arm64" } else { "x64" }
 $osvArch = if ($arm) { "arm64" } else { "amd64" }
+# versoes fixas: o secscan.py depende do formato JSON destas ferramentas.
+# trocar de versao exige revalidar o parsing (python -m unittest discover -s tests).
 $glVer = "8.30.1"
+$osvVer = "2.7.1"
 
 Write-Host "> gitleaks $glVer ($glArch)"
 $glZip = Join-Path $tmp "gitleaks.zip"
@@ -19,9 +22,9 @@ Invoke-WebRequest -UseBasicParsing -OutFile $glZip `
 Expand-Archive -Path $glZip -DestinationPath $tmp -Force
 Move-Item -Force (Join-Path $tmp "gitleaks.exe") (Join-Path $bin "gitleaks.exe")
 
-Write-Host "> osv-scanner (latest, $osvArch)"
+Write-Host "> osv-scanner $osvVer ($osvArch)"
 Invoke-WebRequest -UseBasicParsing -OutFile (Join-Path $bin "osv-scanner.exe") `
-  "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_windows_${osvArch}.exe"
+  "https://github.com/google/osv-scanner/releases/download/v$osvVer/osv-scanner_windows_${osvArch}.exe"
 
 Write-Host "> semgrep (venv isolado)"
 & python -m venv (Join-Path $here ".venv")

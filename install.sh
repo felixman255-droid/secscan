@@ -18,7 +18,10 @@ case "$(uname -m)" in
   *) echo "arquitetura nao suportada: $(uname -m)"; exit 1 ;;
 esac
 
+# versoes fixas: o secscan.py depende do formato JSON destas ferramentas.
+# trocar de versao exige revalidar o parsing (python -m unittest discover -s tests).
 GL_VER=8.30.1
+OSV_VER=2.7.1
 GL_ARCH=$([ "$A" = "amd64" ] && echo "x64" || echo "arm64")
 
 echo "> gitleaks $GL_VER ($OS/$GL_ARCH)"
@@ -30,9 +33,9 @@ mv -f "$TMP/gitleaks" "$BIN/gitleaks"
 chmod +x "$BIN/gitleaks"
 rm -rf "$TMP"
 
-echo "> osv-scanner (latest, $OS/$A)"
+echo "> osv-scanner $OSV_VER ($OS/$A)"
 curl -sL -o "$BIN/osv-scanner" \
-  "https://github.com/google/osv-scanner/releases/latest/download/osv-scanner_${OS}_${A}"
+  "https://github.com/google/osv-scanner/releases/download/v${OSV_VER}/osv-scanner_${OS}_${A}"
 chmod +x "$BIN/osv-scanner"
 
 echo "> semgrep (venv isolado)"

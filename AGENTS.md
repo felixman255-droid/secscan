@@ -10,11 +10,14 @@ e consolida o resultado num relatório único por severidade:
 
 | Camada | Ferramenta | Pega o quê |
 |---|---|---|
-| Segredos | gitleaks | token, chave de API, senha commitada |
-| Dependências | osv-scanner | CVE em biblioteca de terceiros, com nota CVSS |
-| Código (SAST) | semgrep | injeção SQL, `eval`, `shell=True`, cripto fraca, XSS |
+| Segredos | gitleaks 8.30.1 | token, chave de API, senha commitada |
+| Dependências | osv-scanner 2.7.1 | CVE em biblioteca de terceiros, com nota CVSS |
+| Código (SAST) | semgrep 1.187 | injeção SQL, `eval`, `shell=True`, cripto fraca, XSS |
 
 O núcleo é `secscan.py`. Ele não depende de nenhum agente — é um script Python comum.
+
+As versões são fixas porque o parsing depende do formato JSON de cada ferramenta. Ao subir
+versão, rodar `python -m unittest discover -s tests` antes de publicar.
 
 ## Antes de rodar
 
@@ -45,15 +48,37 @@ Sempre apontar `--out` para dentro deste diretório, para não sujar a pasta do 
 Usar `--history` quando o alvo for repositório git: é o cenário mais perigoso, porque um segredo
 removido do código continua válido no provedor.
 
-Código de saída: `0` passou, `1` encontrou achado na severidade definida em `--fail-on`
-(padrão `alta`). Isso permite usar o comando como gate de CI.
+### Códigos de saída
+
+| Código | Significado |
+|---|---|
+| `0` | limpo |
+| `1` | achado na severidade de `--fail-on` (padrão `alta`) |
+| `2` | alguma ferramenta falhou — varredura incompleta |
+
+**Nunca reportar "limpo" com código de saída 2.** O secscan é fail-closed: se o JSON de uma
+ferramenta mudar de formato, a camada é marcada como `FALHOU` em vez de reportar zero achados.
+Se a tabela de camadas do relatório tiver `FALHOU`, avisar o usuário antes de qualquer conclusão.
+
+## Baseline
+
+Sem baseline, toda execução reporta os mesmos achados e o usuário não enxerga o que é novo.
+Para aceitar o estado atual e passar a reportar apenas novidades:
+
+```bash
+./secscan.sh <PROJETO> --write-baseline
+```
+
+Grava `<alvo>/.secscanignore` (commitar junto com o projeto). O fingerprint não inclui o número
+da linha, então mover código não faz o achado reaparecer.
 
 ## Depois de rodar
 
 1. Ler o `relatorio.md` gerado (o caminho aparece no fim da saída).
-2. Resumir por severidade, destacando CRÍTICA e ALTA — não colar o relatório inteiro.
-3. Para cada achado relevante, informar arquivo, linha e correção.
-4. Dizer explicitamente quais achados são provavelmente falso positivo, e por quê.
+2. Conferir a tabela de camadas e reportar qualquer `FALHOU` primeiro.
+3. Resumir por severidade, destacando CRÍTICA e ALTA — não colar o relatório inteiro.
+4. Para cada achado relevante, informar arquivo, linha e correção.
+5. Dizer explicitamente quais achados são provavelmente falso positivo, e por quê.
 
 ## Regras de interpretação
 
@@ -63,6 +88,14 @@ Código de saída: `0` passou, `1` encontrou achado na severidade definida em `-
   dado realmente chega do usuário até o ponto apontado. `eval()` lendo config local não tem o
   peso de `eval()` numa rota HTTP.
 - **Sem lockfile, a camada de dependências é pulada** — e é justamente a que mais rende.
+
+## Saídas geradas
+
+- `relatorio.md` — estado de cada camada, tabela por severidade, instruções de correção
+- `secscan.sarif` — SARIF 2.1.0, consumível por GitHub code scanning, GitLab e Azure DevOps
+- `gitleaks.json`, `osv.json`, `semgrep.json` — saída bruta
+
+Segredos são redigidos no JSON por padrão. O valor real só aparece com `--reveal-secrets`.
 
 ## Armadilhas de API já resolvidas (não regredir)
 

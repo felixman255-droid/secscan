@@ -1,6 +1,6 @@
 ---
 name: secscan
-description: "Varredura de segurança local em um projeto: segredos commitados (gitleaks), CVEs em dependências (osv-scanner) e SAST (semgrep) em um único comando, com relatório unificado por severidade. Usar quando o usuário pedir para escanear ou auditar a segurança de um projeto, procurar chaves/tokens vazados no código, checar vulnerabilidades em dependências, rodar SAST, ou invocar /secscan. Triggers: secscan, escanear segurança, varrer projeto, segredo vazado, chave exposta, CVE, vulnerabilidade em dependência, SAST, auditoria de segurança, security scan."
+description: "Varredura de segurança local em um projeto: segredos commitados (gitleaks), CVEs em dependências (osv-scanner) e SAST (semgrep) em um único comando, com relatório unificado por severidade e SARIF. Usar quando o usuário pedir para escanear ou auditar a segurança de um projeto, procurar chaves/tokens vazados no código, checar vulnerabilidades em dependências, rodar SAST, ou invocar /secscan. Triggers: secscan, escanear segurança, varrer projeto, segredo vazado, chave exposta, CVE, vulnerabilidade em dependência, SAST, auditoria de segurança, security scan."
 agent_created: true
 ---
 
@@ -54,19 +54,54 @@ projeto do usuário com relatórios. Sempre entre aspas: caminhos no Windows cos
 | Flag | Efeito |
 |---|---|
 | `--history` | gitleaks varre todo o histórico do git — acha segredo commitado e depois apagado |
-| `--semgrep-config p/...` | troca o ruleset (padrão `p/default`) |
+| `--baseline ARQ` | arquivo de achados aceitos (padrão `<alvo>/.secscanignore`) |
+| `--write-baseline` | grava o baseline com os achados atuais e encerra |
+| `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula |
+| `--no-stack-rules` | não adiciona os rulesets da stack detectada |
+| `--reveal-secrets` | não redigir segredos no JSON |
+| `--keep N` | quantos relatórios manter (padrão 20) |
+| `--allow-tool-failure` | não sair com 2 quando uma ferramenta quebra |
 | `--no-secrets` / `--no-deps` / `--no-sast` | pula uma camada |
+| `-v` | mostra a saída das ferramentas |
 | `--fail-on critica\|alta\|media\|baixa\|nunca` | severidade que faz sair com código 1 (padrão `alta`) |
 
 Usar `--history` quando o alvo for repositório git — é o cenário mais perigoso, porque um
 segredo removido do código continua válido no provedor.
 
+### Códigos de saída
+
+| Código | Significado |
+|---|---|
+| `0` | limpo |
+| `1` | achado na severidade de `--fail-on` |
+| `2` | alguma ferramenta falhou — varredura incompleta |
+
+**Nunca reportar "limpo" quando o código de saída for 2.** O secscan é fail-closed: se o formato
+do JSON de uma ferramenta mudar, a camada é marcada como `FALHOU` em vez de reportar zero achados.
+
+## Baseline (evitar fadiga de alerta)
+
+Sem baseline, toda execução reporta os mesmos achados e o usuário não vê o que é novo. Para
+aceitar o estado atual e passar a reportar apenas novidades:
+
+```bash
+"<diretório-da-skill>/secscan.sh" "<PROJETO>" --write-baseline
+```
+
+Grava `<alvo>/.secscanignore` (commitar junto com o projeto). O fingerprint não inclui o número
+da linha, então mover código não faz o achado reaparecer.
+
+Sugerir baseline quando o usuário reclamar de achados repetidos, ou quando o volume for grande
+e a maior parte for conhecida.
+
 ## Depois de rodar
 
 1. Ler o `relatorio.md` gerado (o caminho aparece no fim da saída do comando).
-2. Resumir para o usuário por severidade, destacando CRÍTICA e ALTA.
-3. Para cada achado relevante, informar arquivo, linha e o que fazer.
-4. Sinalizar explicitamente quais achados são provavelmente falso positivo, e por quê.
+2. Conferir a tabela **Camadas**: se alguma estiver `FALHOU`, avisar que o resultado está
+   incompleto antes de qualquer outra coisa.
+3. Resumir por severidade, destacando CRÍTICA e ALTA.
+4. Para cada achado relevante, informar arquivo, linha e o que fazer.
+5. Sinalizar explicitamente quais achados são provavelmente falso positivo, e por quê.
 
 Não colar o relatório inteiro na resposta. O usuário quer saber o que corrigir primeiro.
 
@@ -105,8 +140,12 @@ config local não tem o peso de um `eval()` numa rota HTTP.
   `dist`, `build`, `target`, `vendor`.
 - Console do Windows não está em UTF-8: a saída do terminal usa rótulos sem acento
   (`CRITICA`), e o `relatorio.md` mantém a acentuação correta.
+- As versões das ferramentas são fixas porque o parsing depende do JSON de cada uma. Ao subir
+  versão, rodar `python -m unittest discover -s tests` antes de publicar.
 
-## Aviso de dados sensíveis
+## Segurança dos dados
 
-O `gitleaks.json` dentro da pasta do relatório contém o valor do segredo encontrado.
-Não commitar `security-report/` e apagar o relatório após revisar em máquina compartilhada.
+Os segredos são **redigidos** no JSON por padrão (`"Secret": "REDACTED"`). O valor real só
+aparece com `--reveal-secrets` — necessário quando a credencial precisa ser revogada, mas nesse
+caso o relatório contém a credencial em texto claro e deve ser apagado após o uso.
+Não commitar `security-report/`.

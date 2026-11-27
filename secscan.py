@@ -19,6 +19,7 @@ Codigos de saida:
 """
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import os
@@ -49,7 +50,10 @@ STATUS_OK, STATUS_SKIP, STATUS_FAIL = "ok", "skipped", "failed"
 SKIP_DIRS = ("node_modules", ".venv", "venv", "dist", "build", "target",
              "vendor", "__pycache__", ".git", "site-packages", ".next",
              ".terraform", "coverage", ".pytest_cache", ".mypy_cache",
-             ".ruff_cache", ".tox", "obj", ".gradle", ".idea")
+             ".ruff_cache", ".tox", "obj", ".gradle", ".idea",
+             # builds paralelos ou antigos do Next (`.next-audit`, `.next-old`).
+             # `*` vale dentro de um unico nome de pasta, nunca atravessa barra.
+             ".next-*")
 
 # Limites de cobertura. A secao "Escopo" do relatorio e gerada a partir daqui.
 GITLEAKS_MAX_MB = 5
@@ -378,7 +382,7 @@ def detect_iac(target: Path, max_depth=DETECT_DEPTH):
         for root, dirs, files in os.walk(target):
             rel = os.path.relpath(root, root_str)
             depth = 0 if rel == "." else rel.count(os.sep) + 1
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+            dirs[:] = [d for d in dirs if not is_skipped_dir(d) and not d.startswith(".")]
             if depth >= max_depth:
                 dirs[:] = []
             here = Path(rel) if rel != "." else Path(".")
@@ -416,7 +420,7 @@ def detect_compose(target: Path, max_depth=DETECT_DEPTH):
         for root, dirs, files in os.walk(target):
             rel = os.path.relpath(root, root_str)
             depth = 0 if rel == "." else rel.count(os.sep) + 1
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+            dirs[:] = [d for d in dirs if not is_skipped_dir(d) and not d.startswith(".")]
             if depth >= max_depth:
                 dirs[:] = []
             for fn in files:
@@ -509,6 +513,10 @@ def write_baseline(path: Path, findings):
 # Coleta
 # ============================================================================
 
+def is_skipped_dir(nome):
+    return any(fnmatch.fnmatchcase(nome, d) for d in SKIP_DIRS)
+
+
 def _go_escape(text):
     """Escapa so metacaracteres. `re.escape` gera `\\ `, que o RE2 rejeita."""
     return re.sub(r"([\\.^$*+?()\[\]{}|])", r"\\\1", text)
@@ -521,7 +529,7 @@ def skip_pattern(prefix=""):
     e `.gitlab-ci.yml`, e `dist` escondia `distance.py`. `prefix` e o caminho do
     alvo dentro do repositorio (modo git) e nunca conta como pasta ignorada.
     """
-    nomes = "|".join(_go_escape(d) for d in SKIP_DIRS)
+    nomes = "|".join(_go_escape(d).replace(r"\*", r"[^/\\]*") for d in SKIP_DIRS)
     return rf"^{_go_escape(prefix)}(?:.*[/\\])?(?:{nomes})[/\\]"
 
 
@@ -620,7 +628,7 @@ def osv_cmd(target, report):
         # casava o que estava ABAIXO dela, e uma pasta ancestral do alvo com o
         # mesmo nome zerava a varredura. O nome do proprio alvo fica de fora,
         # senao `secscan ./build` nao leria nada.
-        if d != Path(target).name:
+        if not fnmatch.fnmatchcase(Path(target).name, d):
             cmd += ["--x-exclude", f"g:**/{d}"]
     return cmd
 
@@ -699,7 +707,7 @@ def detect_stacks(target: Path, max_depth=DETECT_DEPTH):
         for root, dirs, files in os.walk(target):
             rel = os.path.relpath(root, root_str)
             depth = 0 if rel == "." else rel.count(os.sep) + 1
-            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+            dirs[:] = [d for d in dirs if not is_skipped_dir(d) and not d.startswith(".")]
             if depth >= max_depth:
                 dirs[:] = []
             for filename, pack in STACK_RULES:
@@ -792,10 +800,15 @@ def scan_code(target, outdir, configs, verbose):
     cmd = semgrep_cmd(target, report, configs)
 
     rc, out, dt = run(cmd, "semgrep", stream=verbose)
-    if not report.exists():
-        return [], STATUS_FAIL, short(out.strip() or f"semgrep falhou (rc={rc})", 300), dt
+    texto = (report.read_text(encoding="utf-8", errors="replace")
+             if report.exists() else "")
+    if not texto.strip():
+        # abortou sem gravar: o que explica e o processo, nao o parser.
+        # Fica o FIM da saida, onde o erro costuma estar.
+        fim = " ".join(out.split())[-250:] or "sem saida"
+        return [], STATUS_FAIL, f"semgrep sem relatorio (rc={rc}, {dt:.0f}s): {fim}", dt
     try:
-        data = json.loads(report.read_text(encoding="utf-8") or "{}")
+        data = json.loads(texto)
         findings = parse_semgrep(data, configs)
         fail = semgrep_failure(data, rc)
         if fail:
@@ -863,7 +876,7 @@ def scope_lines(meta):
                  else "historico do git nao lido (sem `--history`)")
     alvo = Path(meta["target"]).name
     excecao = (f" A pasta `{alvo}` e o proprio alvo e por isso nao excluida pelo nome."
-               if alvo in SKIP_DIRS else "")
+               if is_skipped_dir(alvo) else "")
     ignore_proprio = (" O alvo tem `.semgrepignore`, que substitui a lista padrao."
                       if meta.get("semgrepignore") else "")
     return [

@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import secscan as s  # noqa: E402
@@ -22,10 +23,12 @@ DEVE_VER = [
     "app.py", ".github/workflows/ci.yml", ".gitlab-ci.yml", "buildspec.yml",
     "cloudbuild.yaml", "src/objects/cfg.py", "src/target_env.py",
     "src/rebuild.py", "src/distance.py", "tests/x.py", "build", "dist.py",
+    ".nextrc/x", ".next-notas.py",
 ]
 DEVE_IGNORAR = [
     "build/x.py", "a/b/dist/x.py", "node_modules/p/i.js", ".git/config",
     "apps/web/__pycache__/x.pyc", "obj/Debug/x.cs",
+    ".next-audit/server/x.js", "a/.next-verify-1/cache/x",
 ]
 
 
@@ -90,6 +93,48 @@ class TestCommands(unittest.TestCase):
         self.assertIn("g:**/dist", cmd)
 
 
+class TestSkipWildcard(unittest.TestCase):
+    def test_is_skipped_dir(self):
+        for nome in (".next", ".next-audit", "dist"):
+            self.assertTrue(s.is_skipped_dir(nome), nome)
+        for nome in (".nextrc", "distance", "next-app"):
+            self.assertFalse(s.is_skipped_dir(nome), nome)
+
+    def test_osv_keeps_target_that_matches_wildcard(self):
+        cmd = [str(c) for c in s.osv_cmd(Path("/x/.next-old"), Path("/o/osv.json"))]
+        self.assertNotIn("g:**/.next-*", cmd)
+        self.assertIn("g:**/.next", cmd)
+
+
+class TestSemgrepAbort(unittest.TestCase):
+    """Sem JSON gravado, o motivo e o processo, nao o parser."""
+
+    def _scan(self, rc, saida, conteudo):
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td)
+
+            def falso(cmd, label, timeout=1800, stream=False, cwd=None):
+                if conteudo is not None:
+                    (out / "semgrep.json").write_text(conteudo, encoding="utf-8")
+                return rc, saida, 12.0
+
+            with mock.patch.object(s, "run", falso), mock.patch.object(s, "SEMGREP", out):
+                return s.scan_code(out, out, ["p/default"], False)
+
+    def test_empty_report_after_timeout(self):
+        for conteudo in ("", None):
+            _, status, msg, _ = self._scan(124, "semgrep: timeout de 1800s", conteudo)
+            self.assertEqual(status, s.STATUS_FAIL)
+            self.assertIn("rc=124", msg)
+            self.assertIn("timeout de 1800s", msg)
+            self.assertNotIn("results", msg)
+
+    def test_keeps_the_end_of_long_output(self):
+        _, _, msg, _ = self._scan(2, ("linha" + chr(10)) * 500 + "MemoryError no fim", "")
+        self.assertIn("MemoryError no fim", msg)
+        self.assertIn("rc=2", msg)
+
+
 class TestScopeSection(unittest.TestCase):
     def _md(self, **extra):
         meta = {"target": "/p/proj", "name": "proj", "when": "x", "tools": [],
@@ -137,7 +182,8 @@ class TestScopeSection(unittest.TestCase):
 @unittest.skipUnless(s.GITLEAKS.exists(), "gitleaks nao instalado")
 class TestGitleaksIntegration(unittest.TestCase):
     ARQUIVOS = ["app.py", ".github/workflows/ci.yml", "buildspec.yml",
-                "src/objects/cfg.py", "src/distance.py", "build/x.py", "a/dist/x.py"]
+                "src/objects/cfg.py", "src/distance.py", "build/x.py", "a/dist/x.py",
+                ".next-audit/server/x.js"]
     ESPERADO = {"app.py", ".github/workflows/ci.yml", "buildspec.yml",
                 "src/objects/cfg.py", "src/distance.py"}
 
@@ -179,7 +225,8 @@ class TestOsvIntegration(unittest.TestCase):
             with self.subTest(nome), tempfile.TemporaryDirectory() as td:
                 alvo, out = Path(td) / nome, Path(td) / "out"
                 out.mkdir()
-                for rel in ("requirements.txt", "apps/web/dist/requirements.txt"):
+                for rel in ("requirements.txt", "apps/web/dist/requirements.txt",
+                            ".next-old/requirements.txt"):
                     _grava(alvo, rel, "pyyaml==5.1\n")
                 found, status, msg, _ = s.scan_deps(alvo, out, False)
                 self.assertEqual(status, s.STATUS_OK, msg)

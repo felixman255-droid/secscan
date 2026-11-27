@@ -103,6 +103,13 @@ Grava `<alvo>/.secscanignore` (commitar junto com o projeto). O fingerprint não
 da linha, então mover código não faz o achado reaparecer — nem trocar a máquina, porque o id de
 regra local é guardado sem o caminho absoluto da config.
 
+Segredo sem nome de variável ao redor (token solto) é identificado só pela ordem: não aceitar no
+baseline.
+
+Nenhuma camada lê `.next` e `.next-*`. Por isso **não há checagem automática de variável de
+servidor embutida por engano no bundle do navegador** (Next.js): conferir à mão em
+`.next/static` e `.next/server` quando isso importar.
+
 Os achados aceitos não somem do relatório: aparecem na seção **Aceitos por baseline**, com
 ferramenta, local e regra. Use essa seção para responder "o que já foi aceito" sem abrir o
 arquivo do baseline.

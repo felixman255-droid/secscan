@@ -57,7 +57,8 @@ SKIP_DIRS = ("node_modules", ".venv", "venv", "dist", "build", "target",
 
 # Limites de cobertura. A secao "Escopo" do relatorio e gerada a partir daqui.
 GITLEAKS_MAX_MB = 5
-SEMGREP_EXCLUDES = ("node_modules", ".venv", "dist", "build", "target", "vendor")
+SEMGREP_EXCLUDES = ("node_modules", ".venv", "dist", "build", "target", "vendor",
+                    ".next", ".next-*")
 SEMGREP_TIMEOUT = 30
 # Lista embutida no binario do semgrep, que o secscan nao controla. So o que foi
 # medido; vale quando o alvo nao tem um .semgrepignore proprio.
@@ -153,6 +154,13 @@ def sev_from(value, fallback="MÉDIA") -> str:
     return "BAIXA" if score > 0 else "INFO"
 
 
+def secret_context(item):
+    match, secret = str(item.get("Match") or ""), str(item.get("Secret") or "")
+    if secret:
+        match = match.replace(secret, "REDACTED")
+    return " ".join(match.split())[:200] or None
+
+
 def parse_gitleaks(data):
     if not isinstance(data, list):
         raise ScanError("gitleaks: esperava uma lista JSON no topo")
@@ -169,8 +177,9 @@ def parse_gitleaks(data):
             "line": item.get("StartLine"),
             "detail": short(item.get("Description") or "", 150),
             "pkg": None,
-            # Match vem redigido por padrao, entao nao serve de discriminador
-            "snippet": None,
+            # `VAR=REDACTED`: o nome ao redor do segredo identifica o achado sem
+            # guardar o valor, igual com ou sem --reveal-secrets
+            "snippet": secret_context(item),
             "fix": None,
         })
     return out
@@ -286,6 +295,28 @@ def strip_rule_prefix(check_id, configs, **kw):
     return check_id
 
 
+def _snippet(texto):
+    limpo = " ".join((texto or "").split())[:200]
+    return None if limpo in ("", "requires login") else limpo
+
+
+def fill_snippets(findings):
+    """Preenche o trecho que o semgrep nao entregou. Caminhos ainda absolutos."""
+    cache = {}
+    for f in findings:
+        if f.get("snippet") or not f.get("line"):
+            continue
+        path = f["path"]
+        if path not in cache:
+            try:
+                cache[path] = Path(path).read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                cache[path] = []
+        trecho = cache[path][f["line"] - 1:f.get("end_line") or f["line"]]
+        f["snippet"] = _snippet("\n".join(trecho))
+    return findings
+
+
 def parse_semgrep(data, configs=()):
     if not isinstance(data, dict) or "results" not in data:
         raise ScanError("semgrep: campo 'results' ausente no JSON")
@@ -309,8 +340,11 @@ def parse_semgrep(data, configs=()):
             "line": (r.get("start") or {}).get("line"),
             "detail": rid.split(".")[-1][:60],
             "pkg": None,
-            # trecho que casou a regra: discriminador estavel para o fingerprint
-            "snippet": " ".join((extra.get("lines") or "").split())[:200] or None,
+            # trecho que casou a regra: discriminador estavel para o fingerprint.
+            # Sem login o semgrep devolve "requires login" no lugar do codigo;
+            # `fill_snippets` le o trecho do arquivo.
+            "snippet": _snippet(extra.get("lines")),
+            "end_line": (r.get("end") or {}).get("line"),
             "fix": None,
         })
     return out
@@ -809,7 +843,7 @@ def scan_code(target, outdir, configs, verbose):
         return [], STATUS_FAIL, f"semgrep sem relatorio (rc={rc}, {dt:.0f}s): {fim}", dt
     try:
         data = json.loads(texto)
-        findings = parse_semgrep(data, configs)
+        findings = fill_snippets(parse_semgrep(data, configs))
         fail = semgrep_failure(data, rc)
         if fail:
             return findings, STATUS_FAIL, short(f"semgrep: {fail}", 300), dt

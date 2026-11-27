@@ -83,6 +83,12 @@ da linha, então mover código não faz o achado reaparecer — nem trocar a má
 regra local é guardado sem o caminho absoluto da config. Os aceitos aparecem no relatório na
 seção **Aceitos por baseline** (ferramenta, local, regra).
 
+Segredo sem nome de variável ao redor é identificado só pela ordem: não aceitar no baseline.
+
+Nenhuma camada lê `.next` e `.next-*`. Por isso **não há checagem automática de variável de
+servidor embutida por engano no bundle do navegador** (Next.js): conferir à mão em
+`.next/static` e `.next/server` quando isso importar.
+
 Baseline é para **exceção de contexto**, não para repetição. Ruído de regra (o padrão não se
 aplica à arquitetura do projeto) se resolve com `--exclude-rule`, que o relatório declara junto
 com a contagem de achados suprimidos. Antes de gravar, medir a concentração:

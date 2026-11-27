@@ -246,8 +246,10 @@ Para voltar a reportar um achado, apague a linha correspondente no `.secscanigno
 
 O fingerprint é calculado sobre `ferramenta + regra + caminho + trecho de código que casou a
 regra`, **sem o número da linha**. Mover código, corrigir outra ocorrência ou reordenar achados
-não faz um item já aceito reaparecer. Quando a ferramenta não expõe o trecho — caso do gitleaks
-com a redação ativa — o fingerprint cai no índice de ocorrência dentro do arquivo.
+não faz um item já aceito reaparecer. No gitleaks o trecho é o `Match` redigido (`VARIAVEL=REDACTED`), e no semgrep sem login é
+lido do arquivo. Sem nada que identifique (um token solto na linha), cai no índice de ocorrência:
+**não aceitar esses no baseline**, porque a aceitação passa para outro segredo da mesma regra.
+Aceitar um `VARIAVEL=...` vale para qualquer valor que essa variável venha a ter.
 
 Regra local (`--semgrep-config examples/compose-rules.yml`) tem um detalhe que quebrava o
 baseline: o semgrep monta o id como `<diretório-da-config>.<id-da-regra>`, com o caminho
@@ -451,6 +453,9 @@ publica o SARIF no GitHub Security tab e só falha depois do upload. Copie para
   `node_modules`, `dist`, `build`, `.next`, `.next-*` (builds paralelos do Next, como
   `.next-audit`) e as demais de `SKIP_DIRS`. O semgrep usa uma lista menor. A seção
   **Escopo** do `relatorio.md` mostra o que cada camada deixou de fora.
+- Nenhuma camada lê `.next` e `.next-*`. Por isso **não há checagem automática de variável de
+  servidor embutida por engano no bundle do navegador** (Next.js): conferir à mão em
+  `.next/static` e `.next/server` quando isso importar.
 - **SAST não prova exploração.** Aponta padrão de risco. Falso positivo é normal — calibre as
   regras com o tempo.
 - **A camada de dependências precisa de lockfile ou `requirements.txt`.** O osv-scanner lê

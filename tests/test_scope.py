@@ -135,6 +135,62 @@ class TestSemgrepAbort(unittest.TestCase):
         self.assertIn("rc=2", msg)
 
 
+class TestBaselineIdentity(unittest.TestCase):
+    """Aceitar um achado nao pode passar a aceitacao para outro."""
+
+    def _gl(self, *matches):
+        data = [{"RuleID": "generic-api-key", "File": ".env", "StartLine": i + 1,
+                 "Match": m, "Secret": "REDACTED"} for i, m in enumerate(matches)]
+        return s.assign_fingerprints(s.parse_gitleaks(data))
+
+    def test_secret_keeps_identity_when_neighbours_change(self):
+        antes = self._gl("PUBLICA=REDACTED", "SECRETA=REDACTED", "SENHA=REDACTED")
+        depois = self._gl("PUBLICA=REDACTED", "SENHA=REDACTED")
+        self.assertEqual(depois[1]["fp"], antes[2]["fp"])
+        self.assertNotEqual(depois[1]["fp"], antes[1]["fp"])
+
+    def test_same_identity_redacted_or_revealed(self):
+        base = {"RuleID": "r", "File": "a", "StartLine": 1}
+        a = s.parse_gitleaks([dict(base, Match="K=REDACTED", Secret="REDACTED")])
+        b = s.parse_gitleaks([dict(base, Match="K=valor-qualquer", Secret="valor-qualquer")])
+        self.assertEqual(a[0]["snippet"], b[0]["snippet"])
+
+    def test_semgrep_without_login_reads_the_code(self):
+        with tempfile.TemporaryDirectory() as td:
+            alvo = Path(td) / "a.js"
+            alvo.write_text("um(x)\ndois(y)\n", encoding="utf-8")
+            data = {"results": [{"check_id": "r", "path": str(alvo),
+                                 "start": {"line": n}, "end": {"line": n},
+                                 "extra": {"lines": "requires login"}} for n in (1, 2)]}
+            found = s.fill_snippets(s.parse_semgrep(data))
+        self.assertEqual([f["snippet"] for f in found], ["um(x)", "dois(y)"])
+
+
+class TestSemgrepSkipsNextBuilds(unittest.TestCase):
+    def test_command_and_report(self):
+        cmd = [str(c) for c in s.semgrep_cmd("/p", Path("/o/s.json"), [])]
+        for d in (".next", ".next-*"):
+            self.assertIn(d, cmd)
+            self.assertIn(d, s.SEMGREP_EXCLUDES)
+
+    @unittest.skipUnless(s.SEMGREP.exists(), "semgrep nao instalado")
+    def test_real_run(self):
+        with tempfile.TemporaryDirectory() as td:
+            alvo, out = Path(td) / "proj", Path(td) / "out"
+            out.mkdir()
+            for rel in ("a.py", ".next/a.py", ".next-audit/a.py", "w/.next/a.py",
+                        "w/.next-old/a.py", ".nextrc/a.py"):
+                _grava(alvo, rel, "ISCA(1)\n")
+            regra = Path(td) / "isca.yml"
+            regra.write_text("rules:\n- id: isca\n  languages: [python]\n  severity: ERROR\n"
+                             "  message: isca\n  pattern: ISCA(...)\n", encoding="utf-8")
+            found, status, msg, _ = s.scan_code(alvo, out, [str(regra)], False)
+            paths = {f["path"] for f in s.normalize_paths(found, alvo)}
+        self.assertEqual(status, s.STATUS_OK, msg)
+        self.assertEqual(paths, {"a.py", ".nextrc/a.py"})
+        self.assertEqual({f["snippet"] for f in found}, {"ISCA(1)"})
+
+
 class TestScopeSection(unittest.TestCase):
     def _md(self, **extra):
         meta = {"target": "/p/proj", "name": "proj", "when": "x", "tools": [],

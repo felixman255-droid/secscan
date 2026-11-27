@@ -376,6 +376,9 @@ O código `2` existe porque um scanner de segurança que falha em silêncio é p
 quebra. Se o formato do JSON de uma ferramenta mudar, o secscan marca a camada como `FALHOU`
 em vez de reportar "nada encontrado".
 
+Se o semgrep abortar sem gravar o JSON (timeout, falta de memória), a camada traz
+`semgrep sem relatorio (rc=..., Ns)` e o fim da saída; `rc=124` é o limite de 30 minutos.
+
 ## Como interpretar
 
 **CRÍTICA** — corrija hoje. Segredo exposto ou CVE com CVSS ≥ 9.0.
@@ -444,6 +447,10 @@ publica o SARIF no GitHub Security tab e só falha depois do upload. Copie para
 
 ## Limites
 
+- **Pastas de dependência e build não são lidas** por gitleaks, osv-scanner e trivy:
+  `node_modules`, `dist`, `build`, `.next`, `.next-*` (builds paralelos do Next, como
+  `.next-audit`) e as demais de `SKIP_DIRS`. O semgrep usa uma lista menor. A seção
+  **Escopo** do `relatorio.md` mostra o que cada camada deixou de fora.
 - **SAST não prova exploração.** Aponta padrão de risco. Falso positivo é normal — calibre as
   regras com o tempo.
 - **A camada de dependências precisa de lockfile ou `requirements.txt`.** O osv-scanner lê

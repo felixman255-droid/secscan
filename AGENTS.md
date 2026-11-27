@@ -66,6 +66,9 @@ removido do código continua válido no provedor.
 ferramenta mudar de formato, a camada é marcada como `FALHOU` em vez de reportar zero achados.
 Se a tabela de camadas do relatório tiver `FALHOU`, avisar o usuário antes de qualquer conclusão.
 
+Se o semgrep abortar sem gravar o JSON (timeout, falta de memória), a camada traz
+`semgrep sem relatorio (rc=..., Ns)` e o fim da saída; `rc=124` é o limite de 30 minutos.
+
 ## Baseline
 
 Sem baseline, toda execução reporta os mesmos achados e o usuário não enxerga o que é novo.
@@ -151,6 +154,8 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
   caminho é relativo à raiz do repositório, então o padrão leva o `rev-parse --show-prefix`.
 - `osv-scanner --x-exclude`: usar `g:**/<pasta>`. Com `/**` no fim a própria pasta não é
   excluída, e um ancestral do alvo com o mesmo nome zera a varredura como "nenhum lockfile".
+- `SKIP_DIRS` aceita `*` dentro de um nome de pasta (`.next-*`). Comparar nomes com
+  `is_skipped_dir`, nunca com `in SKIP_DIRS`.
 - A seção **Escopo** do relatório sai das constantes. Limite novo de cobertura entra lá.
 - Console do Windows não é UTF-8: o terminal usa rótulos ASCII (`CRITICA`), o `relatorio.md`
   mantém acentuação.

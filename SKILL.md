@@ -87,6 +87,9 @@ segredo removido do código continua válido no provedor.
 **Nunca reportar "limpo" quando o código de saída for 2.** O secscan é fail-closed: se o formato
 do JSON de uma ferramenta mudar, a camada é marcada como `FALHOU` em vez de reportar zero achados.
 
+Se o semgrep abortar sem gravar o JSON (timeout, falta de memória), a camada traz
+`semgrep sem relatorio (rc=..., Ns)` e o fim da saída; `rc=124` é o limite de 30 minutos.
+
 ## Baseline (evitar fadiga de alerta)
 
 Sem baseline, toda execução reporta os mesmos achados e o usuário não vê o que é novo. Para
@@ -234,7 +237,8 @@ config local não tem o peso de um `eval()` numa rota HTTP.
 - Não habilitar os scanners `vuln` e `secret` do trivy: duplicam osv-scanner e gitleaks.
 - `gitleaks dir` não respeita `.gitignore`. O `secscan.py` gera um TOML temporário com
   `[extend] useDefault = true` e `[[allowlists]] paths` para ignorar **apenas** `node_modules`,
-  `.venv`, `dist`, `build`, `target`, `vendor` e afins (SKIP_DIRS). Casa só segmento inteiro de
+  `.venv`, `dist`, `build`, `target`, `vendor`, `.next`, `.next-*` e afins (SKIP_DIRS; `*` não
+  atravessa barra). Casa só segmento inteiro de
   diretório e roda com `cwd=alvo`; ver `skip_pattern` e `gitleaks_cmd`. O relatório declara em
   **Escopo** o que cada camada deixou de fora: ler essa seção antes de dizer que está limpo.
 - **Não herdar o `.gitignore` do alvo na allowlist do gitleaks.** Num scanner de segredos isso

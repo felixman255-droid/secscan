@@ -581,6 +581,26 @@ class TestDetectIac(unittest.TestCase):
             self._touch(root, "k8s/deployment.yaml")
             self.assertEqual(s.detect_iac(root), ["k8s/deployment.yaml"])
 
+    def test_detects_helm_chart_in_neutral_dir(self):
+        # chart aninhado em pasta sem nome de IaC: sem Chart.yaml explicito
+        # nos padroes, detect_iac devolve [] e a camada fica "pulado" mesmo
+        # com templates/*.yaml inseguros dentro.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "services/web/chart/Chart.yaml")
+            self.assertIn("services/web/chart/Chart.yaml", s.detect_iac(root))
+
+    def test_detects_chart_yaml_at_depth_boundary(self):
+        # Chart.yaml fica um nivel ACIMA de templates/. Quando templates/ cai
+        # fora de max_depth, Chart.yaml ainda precisa ativar a camada - o
+        # trivy nao tem esse limite e escaneia o chart inteiro.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "services/web/chart/Chart.yaml")
+            self._touch(root, "services/web/chart/templates/deployment.yaml")
+            found = s.detect_iac(root)
+            self.assertIn("services/web/chart/Chart.yaml", found)
+
     def test_plain_python_project_has_no_iac(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -692,6 +712,30 @@ class TestHermeticContract(unittest.TestCase):
         for bad in ("appdata", ".cache/trivy"):
             self.assertNotIn(bad, cache, f"cache do trivy fora da skill: {cache}")
         self.assertIn(str(s.BASE).replace("\\", "/").lower(), cache)
+
+
+class TestMissingConfigs(unittest.TestCase):
+    def test_registry_packs_are_not_local(self):
+        self.assertEqual(s.missing_configs(["p/default", "p/python"]), [])
+
+    def test_url_config_is_not_local(self):
+        self.assertEqual(s.missing_configs(["https://example.com/r.yml"]), [])
+
+    def test_existing_local_file_is_ok(self):
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "rules.yml"
+            f.write_text("rules: []", encoding="utf-8")
+            self.assertEqual(s.missing_configs([str(f)]), [])
+
+    def test_missing_local_file_is_reported(self):
+        with tempfile.TemporaryDirectory() as td:
+            gone = str(Path(td) / "nope.yml")
+            self.assertEqual(s.missing_configs([gone]), [gone])
+
+    def test_mixed_list_reports_only_the_missing_local_one(self):
+        with tempfile.TemporaryDirectory() as td:
+            gone = str(Path(td) / "nope.yml")
+            self.assertEqual(s.missing_configs(["p/default", gone]), [gone])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,75 @@
+# Regras opt-in para docker-compose, que o Trivy 0.76 nao escaneia
+# (`dockercompose` nao esta em --misconfig-scanners).
+#
+# Uso:
+#   ./secscan.sh ../meu-projeto --semgrep-config examples/compose-rules.yml
+#
+# Entra na camada SAST existente, herdando fingerprint de baseline, mapeamento
+# de severidade e saida SARIF sem codigo novo.
+#
+# LIMITES: e casamento estrutural de YAML, nao um parser de compose. Nao
+# resolve `extends`, nem ancora/merge (`<<: *defaults`), nem valores
+# alternativos (`privileged: "true"` com aspas). Para cobertura real de
+# compose seria preciso renderizar o arquivo antes de analisar.
+
+rules:
+  - id: compose-privileged
+    languages: [yaml]
+    message: >-
+      Container privilegiado no compose: tem acesso total ao host. Remover
+      `privileged: true` e conceder apenas as capabilities necessarias.
+    severity: ERROR
+    paths:
+      include: ["*compose*.yml", "*compose*.yaml"]
+    metadata:
+      category: security
+      references: ["https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities"]
+    pattern: |
+      privileged: true
+
+  - id: compose-docker-sock
+    languages: [yaml]
+    message: >-
+      Socket do Docker montado no container: quem controla o container passa a
+      controlar o daemon do host, o que equivale a root na maquina.
+    severity: ERROR
+    paths:
+      include: ["*compose*.yml", "*compose*.yaml"]
+    metadata:
+      category: security
+    pattern-either:
+      - pattern: |
+          - /var/run/docker.sock:/var/run/docker.sock
+      - pattern: |
+          - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  - id: compose-host-network
+    languages: [yaml]
+    message: >-
+      `network_mode: host` remove o isolamento de rede do container e expoe
+      todos os servicos escutando no host.
+    severity: WARNING
+    paths:
+      include: ["*compose*.yml", "*compose*.yaml"]
+    metadata:
+      category: security
+    pattern: |
+      network_mode: host
+
+  - id: compose-user-root
+    languages: [yaml]
+    message: >-
+      Container roda como root. Definir `user:` com UID sem privilegio para
+      limitar o impacto de um comprometimento.
+    severity: WARNING
+    paths:
+      include: ["*compose*.yml", "*compose*.yaml"]
+    metadata:
+      category: security
+    pattern-either:
+      - pattern: |
+          user: root
+      - pattern: |
+          user: "0"
+      - pattern: |
+          user: 0

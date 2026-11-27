@@ -152,6 +152,25 @@ para assim que todas as stacks conhecidas foram encontradas.
 
 Achados duplicados entre rulesets sobrepostos são removidos automaticamente.
 
+### Regras próprias para docker-compose
+
+Como o Trivy não escaneia compose, `examples/compose-rules.yml` traz regras de Semgrep para o
+que mais importa nesses arquivos: `privileged: true`, socket do Docker montado,
+`network_mode: host` e `user: root`.
+
+```bash
+./secscan.sh ../meu-projeto \
+  --semgrep-config p/default,examples/compose-rules.yml
+```
+
+Entra na camada SAST que já existe, herdando fingerprint de baseline, mapeamento de severidade e
+saída SARIF — sem código novo. É opt-in de propósito: são regras estruturais de YAML, não um
+parser de compose, e por isso **não** resolvem `extends`, âncoras/merge (`<<: *defaults`) nem
+valores alternativos como `privileged: "true"` entre aspas.
+
+Passar um `--semgrep-config` que não existe no disco marca a camada como `FALHOU` (código de
+saída `2`) em vez de reportar zero achados: "limpo" e "não rodou" são coisas diferentes.
+
 ## Saída
 
 Console resumido + `security-report/<timestamp>/` com:
@@ -219,11 +238,12 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-81 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+88 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
 conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore`, detecção de IaC
-(inclusive o que o trivy não escaneia), relatório vazio do trivy, montagem do comando do trivy
-(globs de exclusão e flag offline), retenção de relatório sensível, geração de SARIF e os
-invariantes do contrato (cache hermético, sem pré-aquecimento).
+(inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do trivy, montagem
+do comando do trivy (globs de exclusão e flag offline), validação de `--semgrep-config` local,
+retenção de relatório sensível, geração de SARIF e os invariantes do contrato (cache hermético,
+sem pré-aquecimento).
 O parsing é feito em funções puras justamente para poder ser testado sem rodar os binários.
 
 ## Contrato do projeto
@@ -273,6 +293,11 @@ publica o SARIF no GitHub Security tab e só falha depois do upload. Copie para
 - **`docker-compose.yml` fica de fora.** O Trivy 0.76 não escaneia compose. Um
   `privileged: true` num compose só aparece se o arquivo for convertido para k8s ou revisado
   à mão — o `secscan` avisa quando encontra um.
+- **A detecção de IaC desce até 3 níveis.** Chart Helm em `deploy/charts/app/Chart.yaml` é
+  encontrado; em `a/b/c/d/Chart.yaml` (4 níveis) não é, e a camada fica "pulado". O
+  `Chart.yaml` é detectado explicitamente porque fica um nível acima de `templates/`, que
+  costuma cair fora do limite — o Trivy não tem esse limite e escaneia o chart inteiro quando
+  a camada é ativada.
 - **O trivy pode deixar de ver IaC dentro de pastas de dependência.** `node_modules/`,
   `vendor/` e `.terraform/` costumam trazer Dockerfiles de exemplo; o `secscan` os exclui de
   propósito para não reportar infra de terceiros. Se você mantém IaC versionado dentro de uma

@@ -56,7 +56,7 @@ projeto do usuário com relatórios. Sempre entre aspas: caminhos no Windows cos
 | `--history` | gitleaks varre todo o histórico do git — acha segredo commitado e depois apagado |
 | `--baseline ARQ` | arquivo de achados aceitos (padrão `<alvo>/.secscanignore`) |
 | `--write-baseline` | grava o baseline com os achados atuais e encerra |
-| `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula |
+| `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula. Caminho local inexistente marca a camada como FALHOU |
 | `--no-stack-rules` | não adiciona os rulesets da stack detectada |
 | `--reveal-secrets` | não redigir segredos no JSON |
 | `--keep N` | quantos relatórios manter (padrão 20). Diretórios com `SENSIVEL.txt` são reduzidos a 1 |
@@ -138,6 +138,9 @@ config local não tem o peso de um `eval()` numa rota HTTP.
 - `docker-compose.yml` **não é escaneado**: o trivy 0.76 não tem scanner de compose. Quando o
   projeto só tem compose, a camada aparece como "pulado" com essa explicação. Não dizer ao
   usuário que o compose foi verificado.
+- A detecção de IaC desce até 3 níveis. Chart em `a/b/c/d/Chart.yaml` fica fora e a camada
+  aparece como "pulado" — se o usuário apontar que existe IaC não escaneado, verificar a
+  profundidade antes de afirmar que não há.
 - Misconfig de infra não é vulnerabilidade de código: `privileged: true` num cluster local de
   teste não tem o peso do mesmo campo em produção, e o relatório não distingue os ambientes.
   Sinalizar isso ao usuário em vez de tratar como CRÍTICA automaticamente.
@@ -152,6 +155,12 @@ config local não tem o peso de um `eval()` numa rota HTTP.
   Mapear por faixa: ≥9 CRÍTICA, ≥7 ALTA, ≥4 MÉDIA, >0 BAIXA.
 - `semgrep` marca `confidence: LOW` em regras de segredo e SQLi por heurística. **Não** rebaixar
   severidade por isso — rebaixar esconde chave de API exposta.
+- `semgrep` com `--config` apontando para arquivo inexistente **sai com código 0** e só emite
+  "unable to find a config". Sem validar antes, a camada apareceria como `ok` com zero achados.
+  `missing_configs()` barra isso antes de rodar.
+- No Git Bash, caminho `/c/...` passado como argumento solto é convertido para `C:/...`; dentro
+  de uma lista separada por vírgula **não** é, e o semgrep recebe `\c\...` inválido. Em
+  Windows, usar sempre `C:/...`.
 - `trivy config` reporta PASS e FAIL no mesmo array `Misconfigurations`. Filtrar por
   `Status == "FAIL"`, senão o relatório enche de "está correto".
 - `trivy config` **omite a chave `Results`** quando não detecta nenhum arquivo de config (ex.:

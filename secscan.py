@@ -345,6 +345,10 @@ def detect_iac(target: Path, max_depth=3):
                     low == "dockerfile" or low.startswith("dockerfile.")
                     or low.endswith(".dockerfile")
                     or low.endswith(".tf")
+                    # Chart.yaml fica um nivel acima de templates/, entao e ele
+                    # que ativa a camada quando templates/ passa do max_depth.
+                    # O trivy nao tem esse limite e escaneia o chart inteiro.
+                    or low in ("chart.yaml", "chart.yml")
                     or (in_iac_dir and low.endswith((".yml", ".yaml")))
                 )
                 if is_iac:
@@ -619,9 +623,30 @@ def detect_stacks(target: Path, max_depth=3):
     return packs
 
 
+def missing_configs(configs):
+    """Configs locais que nao existem no disco.
+
+    Referencias de registry (`p/...`) e URLs nao sao verificaveis aqui. Um
+    caminho local ausente faz o semgrep sair com codigo 0 e apenas um aviso
+    "unable to find a config": a camada apareceria como `ok` com zero achados,
+    ou seja, "limpo" quando na verdade nada rodou.
+    """
+    missing = []
+    for c in configs:
+        if c.startswith("p/") or "://" in c:
+            continue
+        if not Path(c).exists():
+            missing.append(c)
+    return missing
+
+
 def scan_code(target, outdir, configs, verbose):
     if not SEMGREP.exists():
         return [], STATUS_FAIL, "semgrep nao instalado", 0.0
+
+    missing = missing_configs(configs)
+    if missing:
+        return [], STATUS_FAIL, f"config inexistente: {', '.join(missing)}", 0.0
 
     report = outdir / "semgrep.json"
     cmd = [SEMGREP, "scan", "--json", "--output", str(report),

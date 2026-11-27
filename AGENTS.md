@@ -17,7 +17,7 @@ projeto e consolida o resultado num relatório único por severidade:
 
 A camada de infraestrutura roda só quando existe `Dockerfile`, `*.tf` ou manifesto k8s — senão
 aparece como `pulado`. `docker-compose.yml` não é suportado pelo trivy 0.76 e é reportado como
-não escaneado, não como limpo. O Trivy entra **apenas** com o scanner `misconfig`;
+não escaneado, não como limpo. A detecção desce até 3 níveis: IaC mais profundo não é visto. O Trivy entra **apenas** com o scanner `misconfig`;
 os scanners `vuln` e `secret` dele duplicariam osv-scanner e gitleaks.
 
 O núcleo é `secscan.py`. Ele não depende de nenhum agente — é um script Python comum.
@@ -122,6 +122,8 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
 - `osv-scanner` expõe `groups[].max_severity` como nota CVSS numérica (`"8.7"`), não rótulo.
 - `semgrep` marca `confidence: LOW` em regras de segredo e SQLi por heurística. Não rebaixar
   severidade por isso — rebaixar esconde chave de API exposta.
+- `semgrep --config` com arquivo inexistente sai com código 0; `missing_configs()` valida antes.
+- `examples/compose-rules.yml` cobre docker-compose via Semgrep, opt-in com `--semgrep-config`.
 - `gitleaks dir` não respeita `.gitignore`; `secscan.py` gera um TOML temporário com allowlist.
 - Console do Windows não é UTF-8: o terminal usa rótulos ASCII (`CRITICA`), o `relatorio.md`
   mantém acentuação.

@@ -125,7 +125,7 @@ No PowerShell: `& ".\secscan.cmd" "..\meu-projeto"`
 | Flag | Efeito |
 |---|---|
 | `--out DIR` | pasta de saída (padrão `security-report`) |
-| `--history` | gitleaks varre todo o histórico do git — acha segredo que foi apagado |
+| `--history` | gitleaks varre o histórico do git **além** do working tree — acha segredo que foi apagado |
 | `--baseline ARQ` | arquivo de achados aceitos (padrão `<alvo>/.secscanignore`) |
 | `--write-baseline` | grava o baseline com os achados atuais e encerra |
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula |
@@ -179,6 +179,7 @@ Console resumido + `security-report/<timestamp>/` com:
   (versão mínima segura extraída do advisory, quando o OSV a informa) e instruções de correção
 - `secscan.sarif` — SARIF 2.1.0, para GitHub code scanning / GitLab / Azure DevOps
 - `gitleaks.json`, `osv.json`, `semgrep.json`, `trivy.json` — saída bruta de cada ferramenta
+  (com `--history`, também `gitleaks-dir.json`: a varredura do working tree)
 
 O topo do `relatorio.md` marca todo o conteúdo como **dado não confiável**: nomes de arquivo e
 mensagens vêm do projeto auditado, que pode ser de terceiros. Um agente que lê esse relatório
@@ -204,6 +205,42 @@ O fingerprint é calculado sobre `ferramenta + regra + caminho + trecho de códi
 regra`, **sem o número da linha**. Mover código, corrigir outra ocorrência ou reordenar achados
 não faz um item já aceito reaparecer. Quando a ferramenta não expõe o trecho — caso do gitleaks
 com a redação ativa — o fingerprint cai no índice de ocorrência dentro do arquivo.
+
+## Primeira execução em um projeto real
+
+Ordem que evita os dois erros caros: congelar vulnerabilidade real no baseline, e ligar o CI
+antes de saber qual é o ruído de base.
+
+**1. Varredura completa, priorizando o que é urgente.**
+
+```bash
+./secscan.sh ../meu-projeto --history
+```
+
+Olhar primeiro os segredos (CRÍTICA, revogar em vez de só remover) e as CVEs com coluna
+**Corrigir para** preenchida — essas têm correção determinística. SAST por último: é a camada
+com mais falso positivo e a que menos muda a decisão de curto prazo.
+
+**2. Triagem antes de gravar o baseline.**
+
+Corrigir o que é real primeiro. `--write-baseline` serve para exceção deliberada — dependência
+só de desenvolvimento, padrão interno isolado —, não para zerar o relatório. Baseline gravado
+cedo demais congela vulnerabilidade de verdade e o time passa a ignorar a saída.
+
+**3. CI só depois do baseline limpo.**
+
+Com `.secscanignore` commitado, o workflow barra apenas regressão nova (`--fail-on alta`). Ligar
+antes disso produz um pipeline vermelho permanente, que é a forma mais rápida de ensinar o time
+a ignorar alerta.
+
+Duas coisas que a verificação ponta a ponta confirmou e que valem saber:
+
+- O baseline é **estável**: duas execuções seguidas geram `.secscanignore` idêntico, e um
+  segredo novo (mesmo não commitado) derruba a execução com `rc=1`. Sem essa estabilidade, todo
+  commit acusaria falha falsa.
+- Teste com valor sintético **não prova nada**. `AKIAIOSFODNN7EXAMPLE` está allowlistado pelo
+  gitleaks por ser o exemplo canônico da AWS, e uma chave inventada pode não casar com regra
+  nenhuma. Um "limpo" obtido assim é falso negativo do teste, não do código.
 
 ## Códigos de saída
 
@@ -238,11 +275,11 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-88 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+92 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
 conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore`, detecção de IaC
 (inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do trivy, montagem
 do comando do trivy (globs de exclusão e flag offline), validação de `--semgrep-config` local,
-retenção de relatório sensível, geração de SARIF e os invariantes do contrato (cache hermético,
+modos de execução do gitleaks (histórico + working tree), retenção de relatório sensível, geração de SARIF e os invariantes do contrato (cache hermético,
 sem pré-aquecimento).
 O parsing é feito em funções puras justamente para poder ser testado sem rodar os binários.
 

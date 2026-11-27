@@ -53,7 +53,7 @@ projeto do usuário com relatórios. Sempre entre aspas: caminhos no Windows cos
 
 | Flag | Efeito |
 |---|---|
-| `--history` | gitleaks varre todo o histórico do git — acha segredo commitado e depois apagado |
+| `--history` | gitleaks varre o histórico **e** o working tree — acha segredo commitado e depois apagado |
 | `--baseline ARQ` | arquivo de achados aceitos (padrão `<alvo>/.secscanignore`) |
 | `--write-baseline` | grava o baseline com os achados atuais e encerra |
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula. Caminho local inexistente marca a camada como FALHOU |
@@ -151,6 +151,13 @@ config local não tem o peso de um `eval()` numa rota HTTP.
 
 - gitleaks ≥ 8.19 **removeu** o subcomando `detect`. Usar `git` ou `dir`, com o alvo como
   **argumento posicional** — `--source` gera `unknown flag`.
+- `gitleaks git` varre **apenas commits**. Um segredo presente no working tree mas não
+  commitado é invisível nesse modo — por isso `--history` executa `git` **e** `dir` e une os
+  resultados. Não "simplificar" para um modo só.
+- A detecção do gitleaks é **específica de formato**. Valores sintéticos plausíveis não são
+  detectados: `AKIAIOSFODNN7EXAMPLE` está allowlistado por ser o exemplo canônico da AWS, e um
+  `sk-proj-...` inventado pode não casar com nenhuma regra. Não concluir "limpo" a partir de
+  teste com valor de mentira.
 - `osv-scanner` expõe `groups[].max_severity` como **nota CVSS numérica** ("8.7"), não rótulo.
   Mapear por faixa: ≥9 CRÍTICA, ≥7 ALTA, ≥4 MÉDIA, >0 BAIXA.
 - `semgrep` marca `confidence: LOW` em regras de segredo e SQLi por heurística. **Não** rebaixar

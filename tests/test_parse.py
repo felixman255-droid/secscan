@@ -738,5 +738,25 @@ class TestMissingConfigs(unittest.TestCase):
             self.assertEqual(s.missing_configs(["p/default", gone]), [gone])
 
 
+class TestGitleaksRuns(unittest.TestCase):
+    def test_without_history_scans_only_working_tree(self):
+        self.assertEqual(s.gitleaks_runs(False), [("dir", "gitleaks.json")])
+
+    def test_with_history_scans_git_and_working_tree(self):
+        runs = s.gitleaks_runs(True)
+        modes = [m for m, _ in runs]
+        self.assertEqual(modes, ["git", "dir"])
+
+    def test_working_tree_is_always_scanned(self):
+        # `gitleaks git` so enxerga commits: sem o modo `dir`, um segredo
+        # ainda nao commitado fica invisivel e a varredura reporta "limpo".
+        for hist in (False, True):
+            self.assertIn("dir", [m for m, _ in s.gitleaks_runs(hist)], hist)
+
+    def test_report_names_do_not_collide(self):
+        names = [n for _, n in s.gitleaks_runs(True)]
+        self.assertEqual(len(names), len(set(names)))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

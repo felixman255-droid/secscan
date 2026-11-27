@@ -119,6 +119,9 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
 
 - gitleaks ≥ 8.19 removeu o subcomando `detect`. Usar `git` ou `dir`, com o alvo como argumento
   posicional — `--source` gera `unknown flag`.
+- `gitleaks git` vê apenas commits; `--history` roda `git` e `dir` e une os resultados.
+- Detecção é específica de formato: valores de exemplo (`AKIAIOSFODNN7EXAMPLE`) são
+  allowlistados e não provam nada.
 - `osv-scanner` expõe `groups[].max_severity` como nota CVSS numérica (`"8.7"`), não rótulo.
 - `semgrep` marca `confidence: LOW` em regras de segredo e SQLi por heurística. Não rebaixar
   severidade por isso — rebaixar esconde chave de API exposta.

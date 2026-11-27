@@ -507,28 +507,50 @@ def gitleaks_config(outdir: Path, target: Path) -> Path:
     return cfg
 
 
+def gitleaks_runs(history):
+    """Modos do gitleaks a executar, com o arquivo de saida de cada um.
+
+    `gitleaks git` varre apenas commits: um segredo presente no working tree
+    mas ainda nao commitado fica invisivel, e a varredura reportaria "limpo"
+    no exato momento em que o segredo esta em disco. Por isso `dir` roda
+    sempre, e `--history` acrescenta o modo `git` em vez de substituir.
+    """
+    if history:
+        return [("git", "gitleaks.json"), ("dir", "gitleaks-dir.json")]
+    return [("dir", "gitleaks.json")]
+
+
 def scan_secrets(target, outdir, history, reveal, verbose):
     if not GITLEAKS.exists():
         return [], STATUS_FAIL, "gitleaks nao instalado", 0.0
 
-    report = outdir / "gitleaks.json"
     cfg = gitleaks_config(outdir, target)
-    cmd = [GITLEAKS, "git" if history else "dir", str(target), "-c", cfg,
-           "-f", "json", "-r", report, "--no-banner",
-           "--exit-code", "0", "--max-target-megabytes", "5"]
-    if not reveal:
-        cmd.append("--redact")
-    if history:
-        cmd += ["--log-opts", "--all"]
+    findings, total_dt, failure = [], 0.0, ""
 
-    rc, out, dt = run(cmd, "gitleaks", stream=verbose)
-    if not report.exists():
-        return [], STATUS_FAIL, short(out.strip() or f"gitleaks falhou (rc={rc})", 300), dt
-    try:
-        data = json.loads(report.read_text(encoding="utf-8") or "[]")
-        return parse_gitleaks(data), STATUS_OK, "", dt
-    except (json.JSONDecodeError, ScanError) as e:
-        return [], STATUS_FAIL, short(str(e), 300), dt
+    for mode, report_name in gitleaks_runs(history):
+        report = outdir / report_name
+        cmd = [GITLEAKS, mode, str(target), "-c", cfg,
+               "-f", "json", "-r", report, "--no-banner",
+               "--exit-code", "0", "--max-target-megabytes", "5"]
+        if not reveal:
+            cmd.append("--redact")
+        if mode == "git":
+            cmd += ["--log-opts", "--all"]
+
+        rc, out, dt = run(cmd, "gitleaks", stream=verbose)
+        total_dt += dt
+        if not report.exists():
+            failure = short(out.strip() or f"gitleaks {mode} falhou (rc={rc})", 300)
+            continue
+        try:
+            data = json.loads(report.read_text(encoding="utf-8") or "[]")
+            findings += parse_gitleaks(data)
+        except (json.JSONDecodeError, ScanError) as e:
+            failure = short(str(e), 300)
+
+    if failure and not findings:
+        return [], STATUS_FAIL, failure, total_dt
+    return findings, STATUS_OK, "", total_dt
 
 
 def scan_deps(target, outdir, verbose):

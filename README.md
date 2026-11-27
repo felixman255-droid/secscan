@@ -130,6 +130,7 @@ No PowerShell: `& ".\secscan.cmd" "..\meu-projeto"`
 | `--write-baseline` | grava o baseline com os achados atuais e encerra |
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula |
 | `--no-stack-rules` | não adiciona os rulesets da stack detectada |
+| `--exclude-rule ID` | desliga uma regra pelo id (o da coluna **Regra** do relatório); o relatório declara quais estão off |
 | `--reveal-secrets` | não redigir segredos no JSON (necessário para revogar credencial) |
 | `--keep N` | quantos relatórios manter (padrão 20; `0` = infinito). Relatórios marcados com `SENSIVEL.txt` são exceção: só o mais recente sobrevive |
 | `--allow-tool-failure` | não sair com código 2 quando uma ferramenta quebra |
@@ -220,6 +221,18 @@ deve tratá-lo como dado, nunca como instrução.
 Sem baseline, a segunda execução reporta os mesmos 38 achados da primeira e você não consegue
 ver **o que é novo**. Na prática, o relatório vira ruído e ninguém mais lê.
 
+**Antes de aceitar, meça a concentração.** Se uma regra genérica responde por metade dos achados,
+o problema é a regra, não os 25 achados — e 25 linhas no baseline escondem isso:
+
+```bash
+jq -r '.results[].check_id' security-report/*/semgrep.json | sort | uniq -c | sort -rn | head
+```
+
+Contagem alta de um mesmo id pede `--exclude-rule` (ou `.semgrepignore`, se o ruído está num
+diretório). Baseline é para **exceção de contexto** — o `subprocess` com argumento fixo, o
+template já sanitizado —, não para repetição. Em config local o `check_id` sai com o prefixo do
+diretório; o id que vale desativar é o sufixo, o mesmo que o relatório mostra.
+
 O baseline registra os achados que você decidiu aceitar. Aceitar tudo de uma vez:
 
 ```bash
@@ -249,7 +262,7 @@ os caracteres fora de `[A-Za-z0-9._-]`. Por isso `/tmp/x/regras.yml` vira `tmp.x
 `C:\x\regras.yml` vira `C.x.` no Windows. Chutar a regra acerta uma plataforma e erra a outra —
 e o erro é silencioso, porque o strip que não casa simplesmente mantém o id completo.
 
-## Silenciar ruído: três níveis, do mais local ao mais amplo
+## Silenciar ruído: quatro níveis, do mais local ao mais amplo
 
 Todos deixam rastro versionado no repositório — nenhum é um ponto cego invisível.
 
@@ -271,9 +284,21 @@ legacy/
 fixtures/
 ```
 
-**3. Achado aceito — `.secscanignore`.** O baseline. Diferente dos dois anteriores: age no
+**3. Regra inteira — `--exclude-rule`.** Para a regra que é barulhenta no projeto todo, não em um
+ponto. Não existe equivalente em arquivo de configuração quando o ruleset vem do registry
+(`p/default`), então a saída é desligar pelo id:
+
+```bash
+./secscan.sh ../meu-projeto --exclude-rule python.lang.security.audit.subprocess-shell-true.subprocess-shell-true
+```
+
+O id é o mesmo que aparece na coluna **Regra** do relatório. A regra desligada fica declarada no
+topo do relatório e na saída do terminal — um silêncio que não aparece em lugar nenhum seria
+indistinguível de cobertura.
+
+**4. Achado aceito — `.secscanignore`.** O baseline. Diferente dos três anteriores: age no
 resultado, não na varredura, então o achado continua sendo detectado e apenas não conta como
-novo. É o único dos três que aparece no relatório, na seção **Aceitos por baseline** — com
+novo. É o único dos quatro que aparece no relatório, na seção **Aceitos por baseline** — com
 ferramenta, local e regra, para você conferir a aceitação sem abrir o arquivo do baseline.
 
 Um detalhe que pega as pessoas: **`tests/` e `test/` já são excluídos pelo Semgrep por padrão.**
@@ -350,7 +375,7 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-111 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+119 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
 conteúdo, baseline (inclusive portabilidade do id de regra local entre caminhos **e** entre
 Windows e POSIX), detecção de stack em monorepo, allowlist do gitleaks (sem herdar `.gitignore`),
 detecção de IaC (inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do

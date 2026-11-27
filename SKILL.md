@@ -57,16 +57,18 @@ projeto do usuário com relatórios. Sempre entre aspas: caminhos no Windows cos
 | `--baseline ARQ` | arquivo de achados aceitos (padrão `<alvo>/.secscanignore`) |
 | `--write-baseline` | grava o baseline com os achados atuais e encerra |
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula. Caminho local inexistente marca a camada como FALHOU |
-
-**Não sugerir trocar `p/default` por `p/security-audit` ou `p/owasp-top-ten` para "reduzir
-ruído".** Medido num projeto de teste: os pacotes estreitos deixaram passar chave AWS exposta e
-SQL injection que o `p/default` encontra. Menos achados pode ser menos cobertura. Ruído se
-resolve com baseline, que é reversível e consciente.
 | `--no-stack-rules` | não adiciona os rulesets da stack detectada |
+| `--exclude-rule ID` | desliga uma regra pelo id (o mesmo da coluna Regra do relatório); fica declarado no relatório |
 | `--reveal-secrets` | não redigir segredos no JSON |
 | `--keep N` | quantos relatórios manter (padrão 20). Diretórios com `SENSIVEL.txt` são reduzidos a 1 |
 | `--allow-tool-failure` | não sair com 2 quando uma ferramenta quebra |
 | `--no-secrets` / `--no-deps` / `--no-sast` / `--no-iac` | pula uma camada |
+
+**Não sugerir trocar `p/default` por `p/security-audit` ou `p/owasp-top-ten` para "reduzir
+ruído".** Medido num projeto de teste: os pacotes estreitos deixaram passar chave AWS exposta e
+SQL injection que o `p/default` encontra. Menos achados pode ser menos cobertura. Ruído se
+resolve com baseline, que é reversível e consciente — ou com `--exclude-rule`, quando o ruído é
+a regra inteira.
 | `--iac` | força a camada de infraestrutura mesmo sem IaC detectado |
 | `-v` | mostra a saída das ferramentas |
 | `--fail-on critica\|alta\|media\|baixa\|nunca` | severidade que faz sair com código 1 (padrão `alta`) |

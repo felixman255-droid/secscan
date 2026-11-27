@@ -445,6 +445,38 @@ def _f(**kw):
     return base
 
 
+class TestSemgrepCmd(unittest.TestCase):
+    def _cmd(self, *a, **kw):
+        return s.semgrep_cmd("/proj", Path("/out/semgrep.json"), *a, **kw)
+
+    def test_exclude_rule_pairs_with_value(self):
+        cmd = self._cmd(["p/default"], ["python.lang.x.eval"])
+        i = cmd.index("--exclude-rule")
+        self.assertEqual(cmd[i + 1], "python.lang.x.eval")
+
+    def test_each_rule_gets_its_own_flag(self):
+        cmd = self._cmd(["p/default"], ["r.one", "r.two"])
+        self.assertEqual(cmd.count("--exclude-rule"), 2)
+
+    def test_no_flag_when_nothing_excluded(self):
+        self.assertNotIn("--exclude-rule", self._cmd(["p/default"]))
+
+    def test_target_is_last(self):
+        self.assertEqual(self._cmd(["p/default"], ["r"])[-1], "/proj")
+
+
+class TestDropExcluded(unittest.TestCase):
+    """A flag do semgrep casa com o check_id cru; o filtro casa com o id do relatorio."""
+
+    def test_removes_by_normalized_id(self):
+        fs = [_f(rule="test-eval"), _f(rule="outra")]
+        self.assertEqual([f["rule"] for f in s.drop_excluded(fs, ["test-eval"])], ["outra"])
+
+    def test_noop_without_exclusions(self):
+        fs = [_f(rule="test-eval")]
+        self.assertEqual(s.drop_excluded(fs, []), fs)
+
+
 class TestReport(unittest.TestCase):
     def _render(self, findings, ignored):
         counts = {}
@@ -474,6 +506,17 @@ class TestReport(unittest.TestCase):
     def test_count_row_still_present(self):
         md = self._render([_f()], [_f(), _f(path="b.py")])
         self.assertIn("| _ignorados por baseline_ | _2_ |", md)
+
+    def test_excluded_rules_are_declared_in_report(self):
+        meta = dict(META, excluded=["python.lang.x.eval"])
+        with tempfile.TemporaryDirectory() as td:
+            s.write_markdown([], [], meta, {}, Path(td))
+            md = (Path(td) / "relatorio.md").read_text(encoding="utf-8")
+        self.assertIn("Regras desativadas", md)
+        self.assertIn("python.lang.x.eval", md)
+
+    def test_no_excluded_section_by_default(self):
+        self.assertNotIn("Regras desativadas", self._render([_f()], []))
 
 
 # --------------------------------------------------------------------- sarif

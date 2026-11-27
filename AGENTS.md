@@ -15,8 +15,9 @@ projeto e consolida o resultado num relatório único por severidade:
 | Código (SAST) | semgrep 1.187 | injeção SQL, `eval`, `shell=True`, cripto fraca, XSS |
 | Infraestrutura | trivy 0.76.2 | Dockerfile e k8s inseguros: root, `privileged`, segredo em `ENV` |
 
-A camada de infraestrutura roda só quando existe `Dockerfile`, `docker-compose*.yml`, `*.tf` ou
-manifesto k8s — senão aparece como `pulado`. O Trivy entra **apenas** com o scanner `misconfig`;
+A camada de infraestrutura roda só quando existe `Dockerfile`, `*.tf` ou manifesto k8s — senão
+aparece como `pulado`. `docker-compose.yml` não é suportado pelo trivy 0.76 e é reportado como
+não escaneado, não como limpo. O Trivy entra **apenas** com o scanner `misconfig`;
 os scanners `vuln` e `secret` dele duplicariam osv-scanner e gitleaks.
 
 O núcleo é `secscan.py`. Ele não depende de nenhum agente — é um script Python comum.
@@ -125,6 +126,11 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
 - Console do Windows não é UTF-8: o terminal usa rótulos ASCII (`CRITICA`), o `relatorio.md`
   mantém acentuação.
 - `trivy config` reporta PASS e FAIL no mesmo array. Filtrar por `Status == "FAIL"`.
+- `trivy config` omite a chave `Results` quando não detecta nenhum arquivo de config — é
+  relatório válido, não schema quebrado. `parse_trivy` retorna `[]` nesse caso.
+- `trivy config` não escaneia `docker-compose.yml`; `dockercompose` não está nos scanners
+  default e nome inválido é ignorado sem erro.
+- `trivy config` renderiza Helm, inclusive valores vindos de `values.yaml`.
 - `trivy config` usa `CauseMetadata.StartLine`, que pode estar ausente em regra de arquivo
   inteiro (ex. "no HEALTHCHECK").
 - `trivy config --skip-dirs` casa por glob: nome simples só casa na raiz e deixa

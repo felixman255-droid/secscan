@@ -133,8 +133,11 @@ config local não tem o peso de um `eval()` numa rota HTTP.
   (`pyproject.toml`, `package.json` sem lockfile ao lado) **não são lidos** — nesse caso o
   osv-scanner aparece como "pulado". Projeto Python só com `requirements.txt` está coberto;
   só com `pyproject.toml` não está. Não avise "SCA cego" sem checar qual dos dois existe.
-- A camada de infraestrutura (trivy) só roda quando existe `Dockerfile`, `docker-compose*.yml`,
-  `*.tf` ou manifesto k8s. Sem isso aparece como "pulado" — não é falha.
+- A camada de infraestrutura (trivy) só roda quando existe `Dockerfile`, `*.tf` ou manifesto
+  k8s. Sem isso aparece como "pulado" — não é falha.
+- `docker-compose.yml` **não é escaneado**: o trivy 0.76 não tem scanner de compose. Quando o
+  projeto só tem compose, a camada aparece como "pulado" com essa explicação. Não dizer ao
+  usuário que o compose foi verificado.
 - Misconfig de infra não é vulnerabilidade de código: `privileged: true` num cluster local de
   teste não tem o peso do mesmo campo em produção, e o relatório não distingue os ambientes.
   Sinalizar isso ao usuário em vez de tratar como CRÍTICA automaticamente.
@@ -151,6 +154,18 @@ config local não tem o peso de um `eval()` numa rota HTTP.
   severidade por isso — rebaixar esconde chave de API exposta.
 - `trivy config` reporta PASS e FAIL no mesmo array `Misconfigurations`. Filtrar por
   `Status == "FAIL"`, senão o relatório enche de "está correto".
+- `trivy config` **omite a chave `Results`** quando não detecta nenhum arquivo de config (ex.:
+  `k8s/*.yaml` que ele não reconhece como Kubernetes). Isso é relatório válido, não schema
+  quebrado: `parse_trivy` retorna `[]` quando há `SchemaVersion` + `ArtifactName`, e só levanta
+  erro se o JSON não tiver nenhuma marca do trivy. Tratar como falha gerava `rc=2` falso.
+- `trivy config` **não escaneia `docker-compose.yml`**: `dockercompose` não está em
+  `--misconfig-scanners` (default: azure-arm, cloudformation, dockerfile, helm, kubernetes,
+  terraform, terraformplan-*, ansible) e passar `--misconfig-scanners dockercompose` é
+  ignorado em silêncio — nome de scanner inválido **não** gera erro. Por isso compose não
+  entra em `detect_iac`.
+- `trivy config` **renderiza Helm** (`Type: helm`): um `privileged: true` que existe só em
+  `values.yaml` e chega ao template via `{{ toYaml .Values.securityContext }}` é detectado.
+  Mas ele usa os values default — um `values-prod.yaml` com override não é considerado.
 - `trivy config` usa `CauseMetadata.StartLine`, que **pode estar ausente** (regra de arquivo
   inteiro, ex. "no HEALTHCHECK"). Não assumir inteiro.
 - `trivy config --skip-dirs` casa por **glob**, e nome simples (`node_modules`) só casa no

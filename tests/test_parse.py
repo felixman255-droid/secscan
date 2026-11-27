@@ -523,6 +523,20 @@ class TestTrivy(unittest.TestCase):
         with self.assertRaises(s.ScanError):
             s.parse_trivy({"SchemaVersion": 2})
 
+    def test_valid_empty_report_is_not_an_error(self):
+        # o trivy OMITE "Results" quando nao detecta nenhum arquivo de config.
+        # Isso e um relatorio valido, nao um schema quebrado: marcar como
+        # FALHOU gera falha falsa (rc=2) em projeto com k8s/*.yaml que o
+        # trivy nao reconhece como kubernetes.
+        empty = {"SchemaVersion": 2, "ArtifactName": ".",
+                 "Trivy": {"Version": "0.76.2"},
+                 "ArtifactType": "filesystem"}
+        self.assertEqual(s.parse_trivy(empty), [])
+
+    def test_report_without_trivy_markers_still_raises(self):
+        with self.assertRaises(s.ScanError):
+            s.parse_trivy({"unexpected": "shape"})
+
     def test_toplevel_list_raises(self):
         with self.assertRaises(s.ScanError):
             s.parse_trivy([])
@@ -555,12 +569,6 @@ class TestDetectIac(unittest.TestCase):
             self._touch(root, "Dockerfile.prod")
             self.assertEqual(s.detect_iac(root), ["Dockerfile.prod"])
 
-    def test_detects_compose(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            self._touch(root, "docker-compose.yml")
-            self.assertEqual(s.detect_iac(root), ["docker-compose.yml"])
-
     def test_detects_terraform(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -591,6 +599,29 @@ class TestDetectIac(unittest.TestCase):
             root = Path(td)
             self._touch(root, "config/settings.yaml")
             self.assertEqual(s.detect_iac(root), [])
+
+    def test_docker_compose_is_not_scannable(self):
+        # o trivy 0.76 nao tem scanner de docker-compose: `Detected config
+        # files num=0`. Anunciar como IaC ativaria a camada para nao escanear
+        # nada, dando falsa sensacao de cobertura.
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "docker-compose.yml")
+            self.assertEqual(s.detect_iac(root), [])
+
+    def test_compose_is_reported_as_unsupported(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "docker-compose.yml")
+            self._touch(root, "compose.yaml")
+            self.assertEqual(s.detect_compose(root),
+                             ["compose.yaml", "docker-compose.yml"])
+
+    def test_plain_project_has_no_compose(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            self._touch(root, "app.py")
+            self.assertEqual(s.detect_compose(root), [])
 
 
 class TestTrivyCmd(unittest.TestCase):

@@ -275,7 +275,16 @@ def parse_trivy(data):
     pode vir ausente (regras de arquivo inteiro, ex. "no HEALTHCHECK"), por
     isso o line e opcional.
     """
-    if not isinstance(data, dict) or "Results" not in data:
+    if not isinstance(data, dict):
+        raise ScanError("trivy: relatorio nao e um objeto")
+    if "Results" not in data:
+        # O trivy OMITE "Results" quando nao detecta nenhum arquivo de config
+        # (ex.: k8s/*.yaml que ele nao reconhece como kubernetes). Isso e um
+        # relatorio valido, nao schema quebrado - tratar como falha geraria
+        # rc=2 falso. Mas um JSON sem nenhuma marca do trivy continua sendo
+        # erro, para nao perder a deteccao de mudanca de formato.
+        if "SchemaVersion" in data and "ArtifactName" in data:
+            return []
         raise ScanError("trivy: campo 'Results' ausente no JSON")
     results = data["Results"]
     if not isinstance(results, list):
@@ -335,12 +344,37 @@ def detect_iac(target: Path, max_depth=3):
                 is_iac = (
                     low == "dockerfile" or low.startswith("dockerfile.")
                     or low.endswith(".dockerfile")
-                    or low.startswith("docker-compose") and low.endswith((".yml", ".yaml"))
-                    or low.startswith("compose.") and low.endswith((".yml", ".yaml"))
                     or low.endswith(".tf")
                     or (in_iac_dir and low.endswith((".yml", ".yaml")))
                 )
                 if is_iac:
+                    found.append(fn if rel == "." else f"{Path(rel).as_posix()}/{fn}")
+    except OSError:
+        pass
+    return sorted(found)
+
+
+def detect_compose(target: Path, max_depth=3):
+    """Lista docker-compose/compose files.
+
+    O trivy 0.76 NAO tem scanner de docker-compose (`Detected config files
+    num=0`), entao esses arquivos nao entram em detect_iac. Sao listados a
+    parte para que a camada possa dizer "nao suportado" em vez de fingir
+    cobertura ou de sumir sem explicacao.
+    """
+    found = []
+    root_str = str(target)
+    try:
+        for root, dirs, files in os.walk(target):
+            rel = os.path.relpath(root, root_str)
+            depth = 0 if rel == "." else rel.count(os.sep) + 1
+            dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith(".")]
+            if depth >= max_depth:
+                dirs[:] = []
+            for fn in files:
+                low = fn.lower()
+                if (low.startswith("docker-compose") or low.startswith("compose.")) \
+                        and low.endswith((".yml", ".yaml")):
                     found.append(fn if rel == "." else f"{Path(rel).as_posix()}/{fn}")
     except OSError:
         pass
@@ -898,8 +932,15 @@ def main():
             findings += f
             tools.append(("trivy", st, msg, dt))
         else:
-            tools.append(("trivy", STATUS_SKIP,
-                          "nenhum Dockerfile/compose/k8s/.tf no projeto", 0.0))
+            compose = detect_compose(target)
+            if compose:
+                # nao fingir cobertura: o trivy 0.76 nao escaneia compose
+                tools.append(("trivy", STATUS_SKIP,
+                              f"docker-compose nao suportado pelo trivy "
+                              f"({compose[0]}); converta para k8s ou revise manualmente", 0.0))
+            else:
+                tools.append(("trivy", STATUS_SKIP,
+                              "nenhum Dockerfile/k8s/.tf no projeto", 0.0))
 
     findings = dedupe(normalize_paths(findings, target))
     findings.sort(key=lambda f: (SEV_ORDER.get(f["sev"], 9), f["path"], f.get("line") or 0))

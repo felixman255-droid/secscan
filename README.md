@@ -32,9 +32,14 @@ Quatro camadas — segredos, dependências, código-fonte e infraestrutura — n
 
 Todas gratuitas. Depois da primeira execução, rodam offline.
 
-A camada de infraestrutura só roda quando existe `Dockerfile`, `docker-compose*.yml`, `*.tf`
-ou manifesto k8s no projeto — sem isso ela aparece como "pulado", sem custo de tempo. Para
-forçar mesmo assim, use `--iac`.
+A camada de infraestrutura só roda quando existe `Dockerfile`, `*.tf` ou manifesto k8s no
+projeto — sem isso ela aparece como "pulado", sem custo de tempo. Para forçar mesmo assim, use
+`--iac`.
+
+**`docker-compose.yml` não é escaneado.** O Trivy 0.76 não tem scanner de compose (`Detected
+config files num=0`), então o arquivo não ativa a camada. Se o projeto só tiver compose, o
+relatório diz isso explicitamente em vez de reportar "limpo" — fingir cobertura seria pior que
+admitir a lacuna.
 
 O Trivy entra **só com o scanner `misconfig`**. Os scanners `vuln` e `secret` dele duplicariam
 o osv-scanner e o gitleaks: mais ruído, zero cobertura nova.
@@ -214,10 +219,11 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-77 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
-conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore`, detecção de IaC,
-montagem do comando do trivy (globs de exclusão e flag offline), retenção de relatório sensível,
-geração de SARIF e os invariantes do contrato (cache hermético, sem pré-aquecimento).
+81 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore`, detecção de IaC
+(inclusive o que o trivy não escaneia), relatório vazio do trivy, montagem do comando do trivy
+(globs de exclusão e flag offline), retenção de relatório sensível, geração de SARIF e os
+invariantes do contrato (cache hermético, sem pré-aquecimento).
 O parsing é feito em funções puras justamente para poder ser testado sem rodar os binários.
 
 ## Contrato do projeto
@@ -261,9 +267,12 @@ publica o SARIF no GitHub Security tab e só falha depois do upload. Copie para
   insegura (container como root, `privileged: true`, `latest` sem pin). Um `privileged: true`
   num cluster de teste local não tem o peso do mesmo campo em produção — o relatório não sabe
   distinguir os dois ambientes.
-- **A camada de infraestrutura cobre só o que existe em arquivo.** Dockerfile, compose, `.tf`
-  e manifesto k8s versionado. Infra provisionada por console, ou imagem construída fora do
+- **A camada de infraestrutura cobre só o que existe em arquivo.** Dockerfile, `.tf` e
+  manifesto k8s versionado. Infra provisionada por console, ou imagem construída fora do
   repositório, fica invisível.
+- **`docker-compose.yml` fica de fora.** O Trivy 0.76 não escaneia compose. Um
+  `privileged: true` num compose só aparece se o arquivo for convertido para k8s ou revisado
+  à mão — o `secscan` avisa quando encontra um.
 - **O trivy pode deixar de ver IaC dentro de pastas de dependência.** `node_modules/`,
   `vendor/` e `.terraform/` costumam trazer Dockerfiles de exemplo; o `secscan` os exclui de
   propósito para não reportar infra de terceiros. Se você mantém IaC versionado dentro de uma

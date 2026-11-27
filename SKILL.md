@@ -234,7 +234,9 @@ config local não tem o peso de um `eval()` numa rota HTTP.
 - Não habilitar os scanners `vuln` e `secret` do trivy: duplicam osv-scanner e gitleaks.
 - `gitleaks dir` não respeita `.gitignore`. O `secscan.py` gera um TOML temporário com
   `[extend] useDefault = true` e `[[allowlists]] paths` para ignorar **apenas** `node_modules`,
-  `.venv`, `dist`, `build`, `target`, `vendor` e afins (SKIP_DIRS).
+  `.venv`, `dist`, `build`, `target`, `vendor` e afins (SKIP_DIRS). Casa só segmento inteiro de
+  diretório e roda com `cwd=alvo`; ver `skip_pattern` e `gitleaks_cmd`. O relatório declara em
+  **Escopo** o que cada camada deixou de fora: ler essa seção antes de dizer que está limpo.
 - **Não herdar o `.gitignore` do alvo na allowlist do gitleaks.** Num scanner de segredos isso
   esconde exatamente o que importa: `.env`, `*.pem`, `credentials.json` são gitignorados por
   conterem segredo. Medido: com `*.pem` no `.gitignore`, uma chave RSA real de 2048 bits não

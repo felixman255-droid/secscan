@@ -51,6 +51,15 @@ SKIP_DIRS = ("node_modules", ".venv", "venv", "dist", "build", "target",
              ".terraform", "coverage", ".pytest_cache", ".mypy_cache",
              ".ruff_cache", ".tox", "obj", ".gradle", ".idea")
 
+# Limites de cobertura. A secao "Escopo" do relatorio e gerada a partir daqui.
+GITLEAKS_MAX_MB = 5
+SEMGREP_EXCLUDES = ("node_modules", ".venv", "dist", "build", "target", "vendor")
+SEMGREP_TIMEOUT = 30
+# Lista embutida no binario do semgrep, que o secscan nao controla. So o que foi
+# medido; vale quando o alvo nao tem um .semgrepignore proprio.
+SEMGREP_DEFAULT_IGNORES = ("tests/", "test/")
+DETECT_DEPTH = 3
+
 STACK_RULES = (
     ("package-lock.json", "p/nodejs"), ("yarn.lock", "p/nodejs"),
     ("pnpm-lock.yaml", "p/nodejs"), ("package.json", "p/nodejs"),
@@ -101,12 +110,12 @@ def short(text: str, n: int) -> str:
     return (cut or t[:n]).rstrip(",.;:") + "..."
 
 
-def run(cmd, label, timeout=1800, stream=False):
+def run(cmd, label, timeout=1800, stream=False, cwd=None):
     """Executa um comando e devolve (rc, saida, segundos). Nunca levanta excecao."""
     t0 = time.time()
     try:
         p = subprocess.run([str(c) for c in cmd], timeout=timeout,
-                           capture_output=not stream, text=True,
+                           capture_output=not stream, text=True, cwd=cwd,
                            encoding="utf-8", errors="replace")
         out = "" if stream else (p.stdout or "") + (p.stderr or "")
         return p.returncode, out, time.time() - t0
@@ -357,7 +366,7 @@ IAC_YAML_DIRS = {"k8s", "kubernetes", "manifests", "deploy", "deployment",
                  "helm", "charts", "templates", "kustomize", "base", "overlays"}
 
 
-def detect_iac(target: Path, max_depth=3):
+def detect_iac(target: Path, max_depth=DETECT_DEPTH):
     """Lista arquivos de infraestrutura (Dockerfile, compose, .tf, k8s).
 
     Retorna caminhos relativos ordenados. Vazio significa que a camada de
@@ -393,7 +402,7 @@ def detect_iac(target: Path, max_depth=3):
     return sorted(found)
 
 
-def detect_compose(target: Path, max_depth=3):
+def detect_compose(target: Path, max_depth=DETECT_DEPTH):
     """Lista docker-compose/compose files.
 
     O trivy 0.76 NAO tem scanner de docker-compose (`Detected config files
@@ -500,7 +509,23 @@ def write_baseline(path: Path, findings):
 # Coleta
 # ============================================================================
 
-def gitleaks_config(outdir: Path, target: Path) -> Path:
+def _go_escape(text):
+    """Escapa so metacaracteres. `re.escape` gera `\\ `, que o RE2 rejeita."""
+    return re.sub(r"([\\.^$*+?()\[\]{}|])", r"\\\1", text)
+
+
+def skip_pattern(prefix=""):
+    """Regex que casa um caminho RELATIVO dentro de alguma pasta de SKIP_DIRS.
+
+    So segmento inteiro de diretorio: sem as barras, `.git` escondia `.github/`
+    e `.gitlab-ci.yml`, e `dist` escondia `distance.py`. `prefix` e o caminho do
+    alvo dentro do repositorio (modo git) e nunca conta como pasta ignorada.
+    """
+    nomes = "|".join(_go_escape(d) for d in SKIP_DIRS)
+    return rf"^{_go_escape(prefix)}(?:.*[/\\])?(?:{nomes})[/\\]"
+
+
+def gitleaks_config(outdir: Path, target: Path, prefix="", name="gitleaks.toml") -> Path:
     """Allowlist do gitleaks: apenas pastas de dependencia e build.
 
     NAO herdar o `.gitignore` do alvo. Num scanner de segredos isso e
@@ -510,14 +535,35 @@ def gitleaks_config(outdir: Path, target: Path) -> Path:
     dependencia ja estao em SKIP_DIRS, que cobre o motivo original (ruido e
     tempo de varredura) sem esconder credencial.
     """
-    cfg = outdir / "gitleaks.toml"
-    patterns = [re.escape(d) for d in SKIP_DIRS]
-    paths = ", ".join(f"'''{p}'''" for p in patterns)
+    cfg = outdir / name
     cfg.write_text(
         "[extend]\nuseDefault = true\n\n[[allowlists]]\n"
         'description = "pastas de dependencia e build"\n'
-        f"paths = [{paths}]\n", encoding="utf-8")
+        f"paths = ['''{skip_pattern(prefix)}''']\n", encoding="utf-8")
     return cfg
+
+
+def git_prefix(target: Path) -> str:
+    """Caminho do alvo dentro do repositorio ('' na raiz ou fora de um repo)."""
+    rc, out, _ = run(["git", "-C", target, "rev-parse", "--show-prefix"], "git")
+    return out.strip() if rc == 0 else ""
+
+
+def gitleaks_cmd(target: Path, mode, cfg, report, reveal):
+    """Devolve (comando, cwd). O alvo vai como caminho relativo de proposito.
+
+    Com caminho absoluto, o `gitleaks dir` compara a allowlist com o caminho
+    inteiro: um projeto sob uma pasta `build/` era ignorado por completo.
+    """
+    target = Path(target)
+    cwd, arg = (target.parent, target.name) if target.is_file() else (target, ".")
+    cmd = [GITLEAKS, mode, arg, "-c", cfg, "-f", "json", "-r", report, "--no-banner",
+           "--exit-code", "0", "--max-target-megabytes", str(GITLEAKS_MAX_MB)]
+    if not reveal:
+        cmd.append("--redact")
+    if mode == "git":
+        cmd += ["--log-opts", "--all"]
+    return cmd, cwd
 
 
 def gitleaks_runs(history):
@@ -542,15 +588,15 @@ def scan_secrets(target, outdir, history, reveal, verbose):
 
     for mode, report_name in gitleaks_runs(history):
         report = outdir / report_name
-        cmd = [GITLEAKS, mode, str(target), "-c", cfg,
-               "-f", "json", "-r", report, "--no-banner",
-               "--exit-code", "0", "--max-target-megabytes", "5"]
-        if not reveal:
-            cmd.append("--redact")
+        mode_cfg = cfg
         if mode == "git":
-            cmd += ["--log-opts", "--all"]
+            # no modo git os caminhos sao relativos a raiz do repositorio
+            prefix = git_prefix(target)
+            if prefix:
+                mode_cfg = gitleaks_config(outdir, target, prefix, "gitleaks-git.toml")
+        cmd, cwd = gitleaks_cmd(target, mode, mode_cfg, report, reveal)
 
-        rc, out, dt = run(cmd, "gitleaks", stream=verbose)
+        rc, out, dt = run(cmd, "gitleaks", stream=verbose, cwd=cwd)
         total_dt += dt
         if not report.exists():
             failure = short(out.strip() or f"gitleaks {mode} falhou (rc={rc})", 300)
@@ -566,15 +612,25 @@ def scan_secrets(target, outdir, history, reveal, verbose):
     return findings, STATUS_OK, "", total_dt
 
 
+def osv_cmd(target, report):
+    cmd = [OSV, "scan", "source", "-r", str(target),
+           "-f", "json", "--output-file", report, "--verbosity", "error"]
+    for d in SKIP_DIRS:
+        # `g:**/d` casa a propria pasta em qualquer nivel. Com `/**` no fim so
+        # casava o que estava ABAIXO dela, e uma pasta ancestral do alvo com o
+        # mesmo nome zerava a varredura. O nome do proprio alvo fica de fora,
+        # senao `secscan ./build` nao leria nada.
+        if d != Path(target).name:
+            cmd += ["--x-exclude", f"g:**/{d}"]
+    return cmd
+
+
 def scan_deps(target, outdir, verbose):
     if not OSV.exists():
         return [], STATUS_FAIL, "osv-scanner nao instalado", 0.0
 
     report = outdir / "osv.json"
-    cmd = [OSV, "scan", "source", "-r", str(target),
-           "-f", "json", "--output-file", report, "--verbosity", "error"]
-    for d in SKIP_DIRS:
-        cmd += ["--x-exclude", f"g:**/{d}/**"]
+    cmd = osv_cmd(target, report)
 
     rc, out, dt = run(cmd, "osv-scanner", stream=verbose)
     if "No package sources found" in out:
@@ -630,7 +686,7 @@ def scan_iac(target, outdir, verbose):
         return [], STATUS_FAIL, short(str(e), 300), dt
 
 
-def detect_stacks(target: Path, max_depth=3):
+def detect_stacks(target: Path, max_depth=DETECT_DEPTH):
     """Procura manifestos ate `max_depth` niveis abaixo do alvo.
 
     Olhar so a raiz perde monorepos (apps/web, services/api). A varredura para
@@ -715,10 +771,10 @@ def drop_excluded(findings, excluded):
 def semgrep_cmd(target, report, configs):
     cmd = [SEMGREP, "scan", "--json", "--output", str(report),
            "--quiet", "--metrics", "off", "--disable-version-check",
-           "--no-git-ignore", "--timeout", "30"]
+           "--no-git-ignore", "--timeout", str(SEMGREP_TIMEOUT)]
     for cfg in configs:
         cmd += ["--config", cfg]
-    for d in ("node_modules", ".venv", "dist", "build", "target", "vendor"):
+    for d in SEMGREP_EXCLUDES:
         cmd += ["--exclude", d]
     cmd.append(str(target))
     return cmd
@@ -796,6 +852,39 @@ def build_sarif(findings, meta):
     }
 
 
+def _ticks(nomes):
+    return ", ".join(f"`{n}`" for n in nomes)
+
+
+def scope_lines(meta):
+    """Secao "Escopo": o que cada camada nao olhou, lido das constantes."""
+    pastas = _ticks(SKIP_DIRS)
+    historico = ("historico do git lido (`--history`)" if meta.get("history")
+                 else "historico do git nao lido (sem `--history`)")
+    alvo = Path(meta["target"]).name
+    excecao = (f" A pasta `{alvo}` e o proprio alvo e por isso nao excluida pelo nome."
+               if alvo in SKIP_DIRS else "")
+    ignore_proprio = (" O alvo tem `.semgrepignore`, que substitui a lista padrao."
+                      if meta.get("semgrepignore") else "")
+    return [
+        "", "## Escopo", "",
+        "Ausencia de achado **nao** significa projeto limpo. Cada camada deixa partes "
+        "diferentes de fora, e as ferramentas ainda tem listas padrao proprias que "
+        "este relatorio nao enumera por completo.",
+        "", "| Camada | Fica de fora |", "|---|---|",
+        f"| gitleaks | pastas, em qualquer nivel: {pastas}; arquivos acima de "
+        f"{GITLEAKS_MAX_MB} MB; {historico}; lista padrao da ferramenta |",
+        f"| osv-scanner | pastas, em qualquer nivel: {pastas}; so le lockfile ou "
+        f"`requirements.txt`, dependencia sem eles nao e vista.{excecao} |",
+        f"| semgrep | so {_ticks(SEMGREP_EXCLUDES)}; lista padrao da ferramenta "
+        f"(medido: {_ticks(SEMGREP_DEFAULT_IGNORES)}); regra que passa de "
+        f"{SEMGREP_TIMEOUT} s num arquivo.{ignore_proprio} |",
+        f"| trivy | pastas, em qualquer nivel: {pastas}; `docker-compose` nao e suportado |",
+        f"| deteccao de stack e IaC | {pastas}, toda pasta iniciada por ponto e o que passa "
+        f"de {DETECT_DEPTH} niveis; decide os rulesets extras do semgrep e se o trivy roda |",
+    ]
+
+
 def write_markdown(findings, ignored, meta, counts, outdir):
     lines = [
         f"# Relatorio de seguranca - {meta['name']}", "",
@@ -823,6 +912,8 @@ def write_markdown(findings, ignored, meta, counts, outdir):
         lines += ["", "> **Regras desativadas (`--exclude-rule`):** " + "; ".join(parts) + ".",
                   "> Ausencia de achado delas **nao** e evidencia de codigo limpo —",
                   "> o silencio e deliberado e esta registrado aqui para nao virar ponto cego."]
+
+    lines += scope_lines(meta)
 
     lines += ["", "## Resumo", "", "| Severidade | Achados |", "|---|---|"]
     for sev in ("CRÍTICA", "ALTA", "MÉDIA", "BAIXA"):
@@ -1120,6 +1211,8 @@ def main():
         "target": str(target), "name": target.name,
         "when": datetime.now().strftime("%d/%m/%Y %H:%M"),
         "tools": tools,
+        "history": args.history,
+        "semgrepignore": (target / ".semgrepignore").is_file(),
         "excluded": [(rid, excluded_counts.get(rid, 0)) for rid in exclude_rules],
     }
 

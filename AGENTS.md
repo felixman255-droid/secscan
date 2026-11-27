@@ -144,6 +144,14 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
 - `gitleaks dir` não respeita `.gitignore`; `secscan.py` gera um TOML temporário com allowlist
   apenas para pastas de dependência/build. O `.gitignore` do alvo **não** é herdado: ele lista
   `.env`, `*.pem` e afins, e herdar isso esconde segredo real (medido).
+- A allowlist casa **segmento inteiro de diretório** (`skip_pattern`). Nome solto como regex
+  escondia `.github/`, `.gitlab-ci.yml`, `buildspec.yml` e `distance.py` (medido).
+- `gitleaks dir` compara a allowlist com o caminho como o alvo foi passado. Rodar com `cwd=alvo`
+  e alvo `.`: com caminho absoluto, um pai chamado `build` zerava a camada. No modo `git` o
+  caminho é relativo à raiz do repositório, então o padrão leva o `rev-parse --show-prefix`.
+- `osv-scanner --x-exclude`: usar `g:**/<pasta>`. Com `/**` no fim a própria pasta não é
+  excluída, e um ancestral do alvo com o mesmo nome zera a varredura como "nenhum lockfile".
+- A seção **Escopo** do relatório sai das constantes. Limite novo de cobertura entra lá.
 - Console do Windows não é UTF-8: o terminal usa rótulos ASCII (`CRITICA`), o `relatorio.md`
   mantém acentuação.
 - `trivy config` reporta PASS e FAIL no mesmo array. Filtrar por `Status == "FAIL"`.

@@ -758,5 +758,28 @@ class TestGitleaksRuns(unittest.TestCase):
         self.assertEqual(len(names), len(set(names)))
 
 
+class TestDefaultConfigs(unittest.TestCase):
+    def test_default_is_p_default(self):
+        # p/default e a base por cobertura, nao por inercia: medido que
+        # p/security-audit e p/owasp-top-ten deixam passar chave AWS exposta
+        # e SQL injection. Nao trocar por um pacote mais estreito sem medir.
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(s.default_configs(Path(td), False), ["p/default"])
+
+    def test_stack_rules_are_appended_not_replacing(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "requirements.txt").write_text("flask\n", encoding="utf-8")
+            cfgs = s.default_configs(root, True)
+            self.assertEqual(cfgs[0], "p/default")
+            self.assertIn("p/python", cfgs)
+
+    def test_stack_rules_can_be_disabled(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "requirements.txt").write_text("flask\n", encoding="utf-8")
+            self.assertEqual(s.default_configs(root, False), ["p/default"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

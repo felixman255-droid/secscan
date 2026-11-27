@@ -57,6 +57,11 @@ projeto do usuário com relatórios. Sempre entre aspas: caminhos no Windows cos
 | `--baseline ARQ` | arquivo de achados aceitos (padrão `<alvo>/.secscanignore`) |
 | `--write-baseline` | grava o baseline com os achados atuais e encerra |
 | `--semgrep-config p/...` | troca o ruleset; aceita lista separada por vírgula. Caminho local inexistente marca a camada como FALHOU |
+
+**Não sugerir trocar `p/default` por `p/security-audit` ou `p/owasp-top-ten` para "reduzir
+ruído".** Medido num projeto de teste: os pacotes estreitos deixaram passar chave AWS exposta e
+SQL injection que o `p/default` encontra. Menos achados pode ser menos cobertura. Ruído se
+resolve com baseline, que é reversível e consciente.
 | `--no-stack-rules` | não adiciona os rulesets da stack detectada |
 | `--reveal-secrets` | não redigir segredos no JSON |
 | `--keep N` | quantos relatórios manter (padrão 20). Diretórios com `SENSIVEL.txt` são reduzidos a 1 |

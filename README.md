@@ -152,6 +152,30 @@ para assim que todas as stacks conhecidas foram encontradas.
 
 Achados duplicados entre rulesets sobrepostos são removidos automaticamente.
 
+### Trocar o ruleset: medir, não assumir
+
+É tentador trocar `p/default` por um pacote "só de vulnerabilidade" (`p/security-audit`,
+`p/owasp-top-ten`) para reduzir ruído. **Menos achados não significa menos falso positivo —
+pode significar menos cobertura.** Medição num projeto Python de teste com 5 problemas
+plantados (chave AWS, PAT do GitHub, SQL injection, `eval`, MD5):
+
+| Configuração | Achados | O que deixou passar |
+|---|---|---|
+| `p/default` + `p/python` | 5 | — |
+| `p/security-audit` + `p/python` | 3 | **chave AWS** e **SQL injection** |
+| `p/owasp-top-ten` + `p/python` | 2 | os acima + `eval` |
+
+Os dois pacotes mais estreitos descartaram justamente as duas categorias de maior peso:
+credencial exposta e injeção. Antes de trocar, compare **regra por regra** entre as
+configurações, não a contagem total.
+
+O caminho mais seguro para ruído continua sendo o baseline: mantenha `p/default` (cobertura) e
+use `.secscanignore` para exceção deliberada. Baseline esconde o que você já julgou; ruleset
+estreito esconde o que você nunca viu.
+
+Os rulesets fora do `p/default` e das stacks não vêm pré-cacheados pelo instalador — a primeira
+execução com eles precisa de rede.
+
 ### Regras próprias para docker-compose
 
 Como o Trivy não escaneia compose, `examples/compose-rules.yml` traz regras de Semgrep para o
@@ -275,11 +299,12 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-92 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+95 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
 conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore`, detecção de IaC
 (inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do trivy, montagem
 do comando do trivy (globs de exclusão e flag offline), validação de `--semgrep-config` local,
-modos de execução do gitleaks (histórico + working tree), retenção de relatório sensível, geração de SARIF e os invariantes do contrato (cache hermético,
+modos de execução do gitleaks (histórico + working tree), escolha de ruleset padrão,
+retenção de relatório sensível, geração de SARIF e os invariantes do contrato (cache hermético,
 sem pré-aquecimento).
 O parsing é feito em funções puras justamente para poder ser testado sem rodar os binários.
 

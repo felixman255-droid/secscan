@@ -893,6 +893,21 @@ def prune_reports(root: Path, keep: int):
 # Main
 # ============================================================================
 
+def default_configs(target, use_stack_rules=True):
+    """Rulesets usados quando `--semgrep-config` nao e passado.
+
+    `p/default` e a base de proposito, nao por inercia: medido num projeto de
+    teste, `p/security-audit` e `p/owasp-top-ten` deixaram passar chave AWS
+    exposta e SQL injection que o `p/default` encontra. Menos achados pode
+    significar menos cobertura, nao menos ruido - ruido se resolve com
+    baseline, que e uma decisao consciente e reversivel.
+    """
+    cfgs = ["p/default"]
+    if use_stack_rules:
+        cfgs += detect_stacks(target)
+    return cfgs
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Varredura unificada de seguranca (segredos + dependencias + SAST).")
@@ -941,9 +956,7 @@ def main():
 
     configs = [c.strip() for c in args.semgrep_config.split(",") if c.strip()]
     if not configs:
-        configs = ["p/default"]
-        if not args.no_stack_rules:
-            configs += detect_stacks(target)
+        configs = default_configs(target, not args.no_stack_rules)
 
     print(f"{C['dim']}secscan - alvo: {target}{C['r']}")
     print(f"{C['dim']}saida: {outdir}{C['r']}")

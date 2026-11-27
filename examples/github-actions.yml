@@ -1,0 +1,74 @@
+# Exemplo de CI para o secscan: roda a varredura e publica o SARIF no GitHub Security tab.
+# Copie para .github/workflows/secscan.yml no seu projeto.
+#
+# Ajuste "SECSCAN_REPO" se você mantiver um fork.
+
+name: secscan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1"        # semanal: pega CVE publicada depois do ultimo commit
+
+permissions:
+  contents: read
+  security-events: write       # necessario para o upload-sarif
+
+env:
+  SECSCAN_REPO: https://github.com/felixman255-droid/secscan.git
+  SECSCAN_DIR: .secscan
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # --history precisa do historico completo do git
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache dos binarios e do venv
+        uses: actions/cache@v4
+        with:
+          path: |
+            .secscan/bin
+            .secscan/.venv
+          key: secscan-${{ runner.os }}-v1
+
+      - name: Instalar secscan
+        run: |
+          git clone --depth 1 "$SECSCAN_REPO" "$SECSCAN_DIR"
+          if [ ! -d "$SECSCAN_DIR/.venv" ]; then bash "$SECSCAN_DIR/install.sh"; fi
+
+      - name: Varredura
+        id: scan
+        continue-on-error: true      # deixa o SARIF ser publicado mesmo reprovando
+        run: |
+          "$SECSCAN_DIR/secscan.sh" . \
+            --out "$SECSCAN_DIR/security-report" \
+            --history \
+            --fail-on alta
+
+      - name: Localizar o SARIF gerado
+        if: always()
+        run: |
+          latest="$(ls -d "$SECSCAN_DIR"/security-report/*/ 2>/dev/null | tail -1)"
+          echo "SARIF_PATH=${latest}secscan.sarif" >> "$GITHUB_ENV"
+
+      - name: Publicar SARIF
+        if: always() && env.SARIF_PATH != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.SARIF_PATH }}
+          category: secscan
+
+      - name: Falhar se a varredura reprovou
+        if: steps.scan.outcome == 'failure'
+        run: |
+          echo "secscan encontrou achados em --fail-on alta (ou uma ferramenta falhou)."
+          exit 1

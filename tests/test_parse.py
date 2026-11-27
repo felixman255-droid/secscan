@@ -43,8 +43,21 @@ SEMGREP_OK = {"results": [{
     "check_id": "python.lang.security.audit.eval-detected",
     "path": "app.py",
     "start": {"line": 17},
-    "extra": {"severity": "ERROR", "message": "Detected use of eval()"},
+    "extra": {"severity": "ERROR", "message": "Detected use of eval()",
+              "lines": "    return eval(entrada)"},
 }], "errors": [], "paths": {}}
+
+OSV_WITH_FIX = {"results": [{
+    "source": {"path": "package-lock.json", "type": "lockfile"},
+    "packages": [{
+        "package": {"name": "lodash", "version": "4.17.15", "ecosystem": "npm"},
+        "groups": [{"ids": ["GHSA-1"], "max_severity": "9.1"}],
+        "vulnerabilities": [{"id": "GHSA-1", "affected": [{
+            "ranges": [{"type": "ECOSYSTEM",
+                        "events": [{"introduced": "0"}, {"fixed": "4.17.21"}]}],
+        }]}],
+    }],
+}]}
 
 
 # ------------------------------------------------------------------ gitleaks
@@ -105,6 +118,31 @@ class TestOsv(unittest.TestCase):
     def test_toplevel_list_raises(self):
         with self.assertRaises(s.ScanError):
             s.parse_osv([])
+
+    def test_extracts_fixed_version(self):
+        out = s.parse_osv(OSV_WITH_FIX)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["fix"], "4.17.21")
+        self.assertEqual(out[0]["sev"], "CRÍTICA")
+
+    def test_fix_is_none_when_advisory_has_no_fixed_event(self):
+        out = s.parse_osv(OSV_OK)
+        self.assertIsNone(out[0]["fix"])
+
+    def test_commit_hash_is_not_offered_as_fix_version(self):
+        data = {"results": [{
+            "source": {"path": "requirements.txt", "type": "lockfile"},
+            "packages": [{
+                "package": {"name": "flask", "version": "1.0.0", "ecosystem": "PyPI"},
+                "groups": [{"ids": ["PYSEC-2023-62"], "max_severity": "7.5"}],
+                "vulnerabilities": [{"id": "PYSEC-2023-62", "affected": [{
+                    "ranges": [{"type": "GIT", "events": [
+                        {"introduced": "0"},
+                        {"fixed": "70f906c51ce49c485f1d355703e9cc3386b1cc2b"}]}],
+                }]}],
+            }],
+        }]}
+        self.assertIsNone(s.parse_osv(data)[0]["fix"])
 
 
 # ----------------------------------------------------------------- semgrep
@@ -212,6 +250,29 @@ class TestFingerprint(unittest.TestCase):
         self.assertNotEqual(a, b)
 
 
+class TestFingerprintContent(unittest.TestCase):
+    """Fingerprint por trecho de codigo, nao por indice de ocorrencia."""
+
+    def _mk(self, snippet, line):
+        return {"tool": "semgrep", "rule": "eval", "path": "a.py",
+                "line": line, "pkg": None, "snippet": snippet}
+
+    def test_reordering_does_not_change_fingerprints(self):
+        a, b = self._mk("eval(x)", 10), self._mk("eval(y)", 20)
+        s.assign_fingerprints([a, b])
+        fp_a, fp_b = a["fp"], b["fp"]
+
+        a2, b2 = self._mk("eval(x)", 5), self._mk("eval(y)", 30)
+        s.assign_fingerprints([b2, a2])
+        self.assertEqual(a2["fp"], fp_a)
+        self.assertEqual(b2["fp"], fp_b)
+
+    def test_identical_snippets_get_distinct_fingerprints(self):
+        a, b = self._mk("eval(x)", 10), self._mk("eval(x)", 20)
+        s.assign_fingerprints([a, b])
+        self.assertNotEqual(a["fp"], b["fp"])
+
+
 # ----------------------------------------------------------------- baseline
 
 class TestBaseline(unittest.TestCase):
@@ -275,6 +336,47 @@ class TestStacks(unittest.TestCase):
     def test_empty_project_returns_no_packs(self):
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual(s.detect_stacks(Path(td)), [])
+
+    def test_finds_stack_in_monorepo_subdirectory(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            api = d / "services" / "api"
+            api.mkdir(parents=True)
+            (api / "go.mod").write_text("module x", encoding="utf-8")
+            self.assertIn("p/golang", s.detect_stacks(d))
+
+    def test_does_not_descend_into_ignored_directories(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            nm = d / "node_modules" / "some-pkg"
+            nm.mkdir(parents=True)
+            (nm / "Cargo.toml").write_text("[package]", encoding="utf-8")
+            self.assertNotIn("p/rust", s.detect_stacks(d))
+
+
+# ----------------------------------------------------------------- gitignore
+
+class TestGitignore(unittest.TestCase):
+    def test_translates_simple_dirs_and_extensions(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / ".gitignore").write_text(
+                "logs/\n*.log\n!keep.log\n# comentario\n**/tmp\nbuild\n",
+                encoding="utf-8")
+            pats = s.gitignore_patterns(d)
+            self.assertIn("logs/", pats)
+            self.assertIn("\\.log$", pats)
+            self.assertIn("build/", pats)
+
+    def test_skips_negation_and_complex_globs(self):
+        with tempfile.TemporaryDirectory() as td:
+            d = Path(td)
+            (d / ".gitignore").write_text("!keep.log\n**/tmp\na/*/b\n", encoding="utf-8")
+            self.assertEqual(s.gitignore_patterns(d), [])
+
+    def test_missing_gitignore_returns_empty(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(s.gitignore_patterns(Path(td)), [])
 
 
 if __name__ == "__main__":

@@ -362,11 +362,13 @@ retenção de relatório sensível, geração de SARIF e os invariantes do contr
 sem pré-aquecimento).
 O parsing é feito em funções puras justamente para poder ser testado sem rodar os binários.
 
-O CI roda a suíte em `ubuntu-latest`, então o teste que passar no Windows pode falhar no Linux
-por motivo bobo. Regra da casa: teste que envolve caminho **não** usa o `Path` da plataforma
-para montar a expectativa — usa `PurePosixPath` ou `PureWindowsPath` explicitamente, e valida os
-dois formatos em qualquer máquina. Um teste que só passa onde foi escrito é pior que teste
-nenhum, porque dá confiança falsa na hora do push.
+O CI roda a suíte em **`ubuntu-latest` e `windows-latest`** — a suíte é Python puro, não baixa
+binário, então a matriz custa segundos. Foi uma matriz que faltava: o commit `2509e0a` passou no
+Windows e quebrou no Linux porque um teste montava expectativa de caminho com o `Path` da
+plataforma. Regra da casa: teste que envolve caminho **não** usa o `Path` da plataforma para
+montar a expectativa — usa `PurePosixPath` ou `PureWindowsPath` explicitamente, e valida os dois
+formatos em qualquer máquina. A matriz é a segunda rede: se um teste voltar a depender de
+semântica de sistema de arquivos, ela acusa no mesmo push.
 
 ## Contrato do projeto
 

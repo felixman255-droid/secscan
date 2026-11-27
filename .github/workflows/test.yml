@@ -7,7 +7,16 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # A suite e Python puro (nao baixa binario externo), entao rodar nos dois
+    # sistemas custa segundos. Sem isso, um teste que so passa onde foi escrito
+    # chega verde no push e quebra no runner — foi o que aconteceu no 2509e0a.
+    # fail-fast: false para ver o resultado dos dois lados, nao so do primeiro
+    # que falhou.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6

@@ -127,7 +127,9 @@ para a janela de contexto e para o provedor do modelo. Informe o caminho e deixe
   severidade por isso — rebaixar esconde chave de API exposta.
 - `semgrep --config` com arquivo inexistente sai com código 0; `missing_configs()` valida antes.
 - `examples/compose-rules.yml` cobre docker-compose via Semgrep, opt-in com `--semgrep-config`.
-- `gitleaks dir` não respeita `.gitignore`; `secscan.py` gera um TOML temporário com allowlist.
+- `gitleaks dir` não respeita `.gitignore`; `secscan.py` gera um TOML temporário com allowlist
+  apenas para pastas de dependência/build. O `.gitignore` do alvo **não** é herdado: ele lista
+  `.env`, `*.pem` e afins, e herdar isso esconde segredo real (medido).
 - Console do Windows não é UTF-8: o terminal usa rótulos ASCII (`CRITICA`), o `relatorio.md`
   mantém acentuação.
 - `trivy config` reporta PASS e FAIL no mesmo array. Filtrar por `Status == "FAIL"`.

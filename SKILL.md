@@ -207,9 +207,13 @@ config local não tem o peso de um `eval()` numa rota HTTP.
   Por isso não se contorna `TMP`/`TEMP`: exigiria escrever fora da pasta da skill e o
   resultado já é correto e determinístico com o bundle embutido.
 - Não habilitar os scanners `vuln` e `secret` do trivy: duplicam osv-scanner e gitleaks.
-- `gitleaks dir` não respeita `.gitignore`. O `secscan.py` já gera um TOML temporário com
-  `[extend] useDefault = true` e `[[allowlists]] paths` para ignorar `node_modules`, `.venv`,
-  `dist`, `build`, `target`, `vendor`.
+- `gitleaks dir` não respeita `.gitignore`. O `secscan.py` gera um TOML temporário com
+  `[extend] useDefault = true` e `[[allowlists]] paths` para ignorar **apenas** `node_modules`,
+  `.venv`, `dist`, `build`, `target`, `vendor` e afins (SKIP_DIRS).
+- **Não herdar o `.gitignore` do alvo na allowlist do gitleaks.** Num scanner de segredos isso
+  esconde exatamente o que importa: `.env`, `*.pem`, `credentials.json` são gitignorados por
+  conterem segredo. Medido: com `*.pem` no `.gitignore`, uma chave RSA real de 2048 bits não
+  era reportada; sem a linha, aparecia.
 - Console do Windows não está em UTF-8: a saída do terminal usa rótulos sem acento
   (`CRITICA`), e o `relatorio.md` mantém a acentuação correta.
 - `subprocess.run(text=True)` no Windows decodifica com o **locale** (cp1252), não com UTF-8 —

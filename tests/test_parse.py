@@ -399,31 +399,6 @@ class TestStacks(unittest.TestCase):
             self.assertNotIn("p/rust", s.detect_stacks(d))
 
 
-# ----------------------------------------------------------------- gitignore
-
-class TestGitignore(unittest.TestCase):
-    def test_translates_simple_dirs_and_extensions(self):
-        with tempfile.TemporaryDirectory() as td:
-            d = Path(td)
-            (d / ".gitignore").write_text(
-                "logs/\n*.log\n!keep.log\n# comentario\n**/tmp\nbuild\n",
-                encoding="utf-8")
-            pats = s.gitignore_patterns(d)
-            self.assertIn("logs/", pats)
-            self.assertIn("\\.log$", pats)
-            self.assertIn("build/", pats)
-
-    def test_skips_negation_and_complex_globs(self):
-        with tempfile.TemporaryDirectory() as td:
-            d = Path(td)
-            (d / ".gitignore").write_text("!keep.log\n**/tmp\na/*/b\n", encoding="utf-8")
-            self.assertEqual(s.gitignore_patterns(d), [])
-
-    def test_missing_gitignore_returns_empty(self):
-        with tempfile.TemporaryDirectory() as td:
-            self.assertEqual(s.gitignore_patterns(Path(td)), [])
-
-
 class TestPruneReports(unittest.TestCase):
     def _mk(self, root, name, sensitive=False):
         d = root / name
@@ -779,6 +754,33 @@ class TestDefaultConfigs(unittest.TestCase):
             root = Path(td)
             (root / "requirements.txt").write_text("flask\n", encoding="utf-8")
             self.assertEqual(s.default_configs(root, False), ["p/default"])
+
+
+class TestGitleaksConfig(unittest.TestCase):
+    def _cfg(self, root, outdir):
+        s.gitleaks_config(outdir, root)
+        return (outdir / "gitleaks.toml").read_text(encoding="utf-8")
+
+    def test_dependency_dirs_are_allowlisted(self):
+        with tempfile.TemporaryDirectory() as td:
+            root, out = Path(td), Path(td) / "out"
+            out.mkdir()
+            cfg = self._cfg(root, out)
+            for d in ("node_modules", "vendor", ".terraform"):
+                self.assertIn(d, cfg)
+
+    def test_gitignore_is_not_inherited(self):
+        # Para um scanner de SEGREDOS herdar o .gitignore e contraproducente:
+        # e la que ficam `.env`, `*.pem`, `credentials.json`. Medido: com
+        # `*.pem` no .gitignore, uma chave RSA real de 2048 bits passava
+        # invisivel; removendo a linha, o achado aparecia.
+        with tempfile.TemporaryDirectory() as td:
+            root, out = Path(td), Path(td) / "out"
+            out.mkdir()
+            (root / ".gitignore").write_text(".env\n*.pem\nsecrets/\n", encoding="utf-8")
+            cfg = self._cfg(root, out)
+            for bad in ("pem", "secrets", ".env"):
+                self.assertNotIn(bad, cfg, f".gitignore vazou para a allowlist: {bad}")
 
 
 if __name__ == "__main__":

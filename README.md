@@ -230,6 +230,37 @@ regra`, **sem o número da linha**. Mover código, corrigir outra ocorrência ou
 não faz um item já aceito reaparecer. Quando a ferramenta não expõe o trecho — caso do gitleaks
 com a redação ativa — o fingerprint cai no índice de ocorrência dentro do arquivo.
 
+## Silenciar ruído: três níveis, do mais local ao mais amplo
+
+Todos deixam rastro versionado no repositório — nenhum é um ponto cego invisível.
+
+**1. Linha específica — `# nosemgrep`.** Suprime uma regra naquele ponto e a justificativa fica
+no `git blame`. É o mecanismo mais preciso:
+
+```python
+return hashlib.md5(senha.encode()).hexdigest()  # nosemgrep: python.lang.security.insecure-hash-algorithms-md5.insecure-hash-algorithm-md5
+```
+
+Sem o id da regra, `# nosemgrep` suprime **todas** as regras naquela linha — funciona, mas perde
+a especificidade e esconde regressão futura.
+
+**2. Caminho inteiro — `.semgrepignore`.** Exclui diretórios de baixa criticidade sem tocar no
+comando nem no cache. Funciona mesmo com o `--no-git-ignore` que o `secscan` passa (verificado):
+
+```
+legacy/
+fixtures/
+```
+
+**3. Achado aceito — `.secscanignore`.** O baseline. Diferente dos dois anteriores: age no
+resultado, não na varredura, então o achado continua sendo detectado e apenas não conta como
+novo. É o único dos três que o relatório mostra na seção de ignorados.
+
+Um detalhe que pega as pessoas: **`tests/` e `test/` já são excluídos pelo Semgrep por padrão.**
+Não é preciso `.semgrepignore` para eles — e vale saber que código dentro dessas pastas **nunca**
+é analisado, mesmo que não seja teste de verdade. `fixture/`, `spec/` e `src/` são varridos
+normalmente.
+
 ## Primeira execução em um projeto real
 
 Ordem que evita os dois erros caros: congelar vulnerabilidade real no baseline, e ligar o CI
@@ -299,8 +330,8 @@ tratar como urgente.
 .venv\Scripts\python.exe -m unittest discover -s tests -v   # Windows
 ```
 
-95 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
-conteúdo, baseline, detecção de stack em monorepo, tradução de `.gitignore`, detecção de IaC
+94 testes cobrindo o parsing das quatro ferramentas, mapeamento de severidade, fingerprints por
+conteúdo, baseline, detecção de stack em monorepo, allowlist do gitleaks (sem herdar `.gitignore`), detecção de IaC
 (inclusive o que o trivy não escaneia, e charts aninhados), relatório vazio do trivy, montagem
 do comando do trivy (globs de exclusão e flag offline), validação de `--semgrep-config` local,
 modos de execução do gitleaks (histórico + working tree), escolha de ruleset padrão,

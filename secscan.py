@@ -465,44 +465,22 @@ def write_baseline(path: Path, findings):
 # Coleta
 # ============================================================================
 
-def gitignore_patterns(target: Path, limit=50):
-    """Traduz padroes simples do .gitignore do alvo em regex para o gitleaks.
-
-    Suporta apenas o subconjunto sem negacao e sem glob no meio do caminho:
-    `dir/` vira `dir/` e `*.ext` vira `\\.ext$`. O resto e ignorado de proposito —
-    traduzir gitignore completo para regex arrisca falso negativo silencioso.
-    """
-    p = target / ".gitignore"
-    if not p.exists():
-        return []
-    try:
-        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
-        return []
-    out = []
-    for line in lines:
-        s = line.strip()
-        if not s or s.startswith("#") or s.startswith("!"):
-            continue
-        s = s.lstrip("/").rstrip("/")
-        if not s:
-            continue
-        if s.startswith("*.") and "/" not in s:
-            out.append(re.escape(s[1:]) + "$")
-        elif "*" not in s and "?" not in s:
-            out.append(re.escape(s) + "/")
-        if len(out) >= limit:
-            break
-    return out
-
-
 def gitleaks_config(outdir: Path, target: Path) -> Path:
+    """Allowlist do gitleaks: apenas pastas de dependencia e build.
+
+    NAO herdar o `.gitignore` do alvo. Num scanner de segredos isso e
+    contraproducente: e justamente no `.gitignore` que ficam `.env`, `*.pem` e
+    `credentials.json`. Medido: com `*.pem` no .gitignore, uma chave RSA real
+    de 2048 bits nao era reportada; removendo a linha, aparecia. Pastas de
+    dependencia ja estao em SKIP_DIRS, que cobre o motivo original (ruido e
+    tempo de varredura) sem esconder credencial.
+    """
     cfg = outdir / "gitleaks.toml"
-    patterns = [re.escape(d) for d in SKIP_DIRS] + gitignore_patterns(target)
+    patterns = [re.escape(d) for d in SKIP_DIRS]
     paths = ", ".join(f"'''{p}'''" for p in patterns)
     cfg.write_text(
         "[extend]\nuseDefault = true\n\n[[allowlists]]\n"
-        'description = "pastas de dependencia, build e .gitignore do alvo"\n'
+        'description = "pastas de dependencia e build"\n'
         f"paths = [{paths}]\n", encoding="utf-8")
     return cfg
 

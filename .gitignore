@@ -1,7 +1,18 @@
 .venv/
 bin/
+cache/
 security-report/
+
+# caches de Python e de ferramentas
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# temporarios e arquivos locais
+*.tmp
+*.log
+.env
 .DS_Store
-cache/
+Thumbs.db

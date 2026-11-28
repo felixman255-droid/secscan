@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.2 (2026-11-28)
+
+- **Corrigido:** no Windows PowerShell 5.1, o `install.ps1` parava com erro depois de baixar as
+  ferramentas, ao pré-carregar os rulesets do semgrep. Quem teve esse erro deve rodar o
+  instalador de novo.
+- **Limitação conhecida:** no Windows, o semgrep falha quando a pasta `TEMP` tem um caminho longo
+  (funcionou com 68 caracteres e falhou com 98). O `TEMP` padrão é curto.
+
 ## 1.1.1 (2026-11-28)
 
 ### Documentação

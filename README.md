@@ -1,11 +1,53 @@
+<div align="center">
+
 # secscan
 
-[![tests](https://github.com/felixman255-droid/secscan/actions/workflows/test.yml/badge.svg)](https://github.com/felixman255-droid/secscan/actions/workflows/test.yml)
-![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+### Um comando. Quatro camadas. Um relatório que diz o que corrigir primeiro.
 
-Varredura de segurança em um comando, para o **seu próprio** código.
-Segredos, dependências, código-fonte e infraestrutura num único relatório.
+Procura segredos vazados, dependências vulneráveis, código perigoso e infraestrutura insegura no **seu próprio** projeto.
+
+[![tests](https://github.com/felixman255-droid/secscan/actions/workflows/test.yml/badge.svg)](https://github.com/felixman255-droid/secscan/actions/workflows/test.yml)
+![versão](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Ffelixman255-droid%2Fsecscan%2Fmain%2F.claude-plugin%2Fplugin.json&query=%24.version&label=vers%C3%A3o&color=3fb950)
+![Windows e Linux](https://img.shields.io/badge/testado_em-Windows_%7C_Linux-0078d4)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776ab?logo=python&logoColor=white)
+[![Plugin do Claude Code](https://img.shields.io/badge/Claude_Code-plugin-d97757)](#instalação-rápida)
+[![License: MIT](https://img.shields.io/badge/license-MIT-f4c430)](LICENSE)
+
+[Instalar](#instalação-rápida) · [Usar](#uso-pela-linha-de-comando) · [Exemplo de relatório](examples/relatorio.md) · [Documentação](#documentação)
+
+</div>
+
+![Antes e depois: um projeto fictício com segredo, injeção, cripto fraca, CVE e contêiner root; depois do secscan, 31 achados ordenados por severidade](docs/assets/antes-depois.svg)
+
+<table>
+<tr>
+<td width="33%" valign="top">
+
+**Sem o secscan**
+
+Quatro ferramentas, quatro formatos de saída e quatro jeitos de ignorar ruído. Uma delas falha em silêncio e o projeto parece limpo.
+
+</td>
+<td width="33%" valign="top">
+
+**Com o secscan**
+
+Um relatório por severidade, com a versão que corrige cada dependência. Camada que falha aparece como `FALHOU`, com código de saída `2`.
+
+</td>
+<td width="33%" valign="top">
+
+**Feito para agentes**
+
+Peça "audite este projeto". O agente roda o scan, confere as camadas e separa o que é provável falso positivo.
+
+</td>
+</tr>
+</table>
+
+## Como funciona
+
+![Fluxo: o projeto passa por gitleaks, osv-scanner, semgrep e trivy; os resultados são consolidados por severidade, com baseline, e viram relatorio.md, secscan.sarif e JSONs brutos](docs/assets/como-funciona.svg)
 
 ## As quatro camadas
 

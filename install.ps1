@@ -74,12 +74,17 @@ $py = Join-Path $dest ".venv\Scripts\python.exe"
 $semgrep = Join-Path $dest ".venv\Scripts\semgrep.exe"
 
 Write-Host "> pre-cache dos rulesets (permite rodar offline depois)"
+# No PowerShell 5.1, com "Stop", redirecionar o stderr de um .exe torna fatal a primeira linha,
+# e o semgrep escreve a mensagem de sucesso no stderr. O que decide aqui e o codigo de saida.
+$modoAnterior = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 foreach ($pack in @("p/default", "p/nodejs", "p/python", "p/golang",
                     "p/java", "p/ruby", "p/php", "p/rust", "p/csharp")) {
   & $semgrep scan --config $pack --validate *> $null
   if ($LASTEXITCODE -eq 0) { Write-Host "  $pack" }
   else { Write-Warning "  $pack nao pode ser baixado agora (sera buscado na primeira execucao)" }
 }
+$ErrorActionPreference = $modoAnterior
 
 # O bundle de checks do trivy NAO e pre-aquecido de proposito.
 # `trivy config` roda com --skip-check-update e --cache-dir apontando para

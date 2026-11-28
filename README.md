@@ -62,6 +62,15 @@ Para usar **como instrução de agente**, o repositório traz os dois formatos q
 O `SKILL.md` serve para Claude Code e WorkBuddy **sem alteração** — o formato é o mesmo. Campos
 extras no frontmatter são ignorados por quem não os conhece, então nada quebra.
 
+Instalar como plugin (Claude Code 2.1.275 ou mais novo):
+
+```text
+/plugin install secscan --marketplace felixman255-droid/secscan
+```
+
+O plugin fica numa pasta própria por versão: depois de instalar, e a cada versão nova, rodar o
+instalador descrito em **Instalação** dentro dessa pasta.
+
 Instalar como skill (Claude Code):
 
 ```bash

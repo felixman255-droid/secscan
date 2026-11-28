@@ -1,0 +1,11 @@
+{
+  "name": "secscan",
+  "owner": { "name": "felixman255-droid" },
+  "plugins": [
+    {
+      "name": "secscan",
+      "source": "./",
+      "description": "Local security scan in one report: leaked secrets, vulnerable dependencies, code analysis and infrastructure misconfiguration."
+    }
+  ]
+}

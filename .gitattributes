@@ -1,5 +1,8 @@
-* text=auto
+# Fim de linha fixo em LF: o validador de plugins exige que o instalado seja igual ao validado.
+* text=auto eol=lf
 *.sh  text eol=lf
 *.py  text eol=lf
-*.ps1 text eol=crlf
-*.cmd text eol=crlf
+*.ps1 text eol=lf
+# o cmd.exe precisa de CRLF; sem conversao, os bytes vao para o repositorio como estao
+*.cmd -text
+*.bat -text

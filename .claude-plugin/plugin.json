@@ -1,0 +1,10 @@
+{
+  "name": "secscan",
+  "version": "1.0.0",
+  "description": "Local security scan in one report: leaked secrets (gitleaks), vulnerable dependencies (osv-scanner), code analysis (semgrep) and infrastructure misconfiguration (trivy).",
+  "author": { "name": "felixman255-droid" },
+  "homepage": "https://github.com/felixman255-droid/secscan",
+  "repository": "https://github.com/felixman255-droid/secscan",
+  "license": "MIT",
+  "keywords": ["security", "secrets", "sast", "dependencies", "audit"]
+}

@@ -1,5 +1,6 @@
 {
   "name": "secscan",
+  "description": "secscan: local security scan as a Claude Code plugin.",
   "owner": { "name": "felixman255-droid" },
   "plugins": [
     {

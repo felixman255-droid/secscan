@@ -16,11 +16,17 @@ depende de agente nenhum.
 
 ## Antes de rodar: checar a instalação
 
-O diretório desta skill deve conter `secscan.py`, `bin/` e `.venv/`. Verificar:
+`bin/` e `.venv/` ficam na **pasta de instalação**. Descobrir qual é e verificar:
 
 ```bash
-ls <diretório-da-skill>/bin/gitleaks* <diretório-da-skill>/bin/osv-scanner* <diretório-da-skill>/bin/trivy* <diretório-da-skill>/.venv
+python -B "<diretório-da-skill>/secscan.py" --home
+ls <pasta-de-instalação>/bin <pasta-de-instalação>/.venv
 ```
+
+Instalado como plugin, `bin/`, `.venv/`, `cache/` e os relatórios ficam na pasta de dados do plugin
+(`plugins/data/secscan-secscan/`), que sobrevive a atualizações e é removida ao desinstalar.
+`secscan.py --home` mostra qual é a pasta em uso.
+Num clone, a pasta de instalação é o próprio diretório da skill.
 
 Se `bin/` ou `.venv/` não existirem, rodar o instalador uma vez:
 

@@ -27,7 +27,8 @@ versão, rodar `python -m unittest discover -s tests` antes de publicar.
 
 ## Antes de rodar
 
-Verificar se `bin/` e `.venv/` existem neste diretório. Se não existirem, instalar uma vez:
+Verificar se `bin/` e `.venv/` existem na pasta de instalação (`secscan.py --home`; num clone é
+este diretório). Se não existirem, instalar uma vez:
 
 ```bash
 bash install.sh                  # Linux / macOS

@@ -32,7 +32,32 @@ from datetime import datetime
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
-BIN = BASE / "bin"
+
+
+def data_home(base: Path) -> Path:
+    """Onde ficam `bin/`, `.venv/` e `cache/`.
+
+    Num clone, na propria pasta. Instalado como plugin do Claude Code
+    (`plugins/cache/<marketplace>/<plugin>/<versao>/`) a pasta muda a cada
+    versao, entao vai para `plugins/data/<plugin>-<marketplace>/`, que sobrevive
+    a atualizacao e e removida quando o plugin e desinstalado.
+    """
+    plugin, mk, cache = base.parent, base.parent.parent, base.parent.parent.parent
+    if cache.name != "cache" or not (base / ".claude-plugin" / "plugin.json").is_file():
+        return base
+    ident = re.sub(r"[^A-Za-z0-9_-]", "-", f"{plugin.name}@{mk.name}")
+    return cache.parent / "data" / ident
+
+
+def resolve_out(out: Path, base: Path, home: Path) -> Path:
+    """Relatorio pedido dentro da pasta versionada vai para a pasta persistente."""
+    if home != base and out.is_relative_to(base):
+        return home / out.relative_to(base)
+    return out
+
+
+HOME = data_home(BASE)
+BIN = HOME / "bin"
 IS_WIN = os.name == "nt"
 
 SEV_ORDER = {"CRÍTICA": 0, "ALTA": 1, "MÉDIA": 2, "BAIXA": 3, "INFO": 4}
@@ -102,8 +127,8 @@ OSV = exe("osv-scanner")
 TRIVY = exe("trivy")
 # cache do trivy dentro da skill: mantem a promessa de nao escrever nada
 # fora desta pasta (o padrao dele seria %LOCALAPPDATA%\trivy ou ~/.cache/trivy)
-TRIVY_CACHE = BASE / "cache" / "trivy"
-VENV_DIR = BASE / (".venv/Scripts" if IS_WIN else ".venv/bin")
+TRIVY_CACHE = HOME / "cache" / "trivy"
+VENV_DIR = HOME / (".venv/Scripts" if IS_WIN else ".venv/bin")
 SEMGREP = VENV_DIR / ("semgrep.exe" if IS_WIN else "semgrep")
 
 
@@ -1164,7 +1189,12 @@ def main():
     ap.add_argument("--fail-on", default="alta",
                     choices=["critica", "alta", "media", "baixa", "nunca"],
                     help="codigo de saida 1 a partir desta severidade")
+    ap.add_argument("--home", action="store_true",
+                    help="mostra a pasta onde ficam as ferramentas e sai")
     args = ap.parse_args()
+    if args.home:
+        print(HOME)
+        return 0
 
     target = Path(args.target).resolve()
     if not target.exists():
@@ -1173,7 +1203,7 @@ def main():
 
     baseline_path = Path(args.baseline) if args.baseline else target / ".secscanignore"
 
-    outroot = Path(args.out).resolve()
+    outroot = resolve_out(Path(args.out).resolve(), BASE, HOME)
     outdir = outroot / datetime.now().strftime("%Y%m%d-%H%M%S")
     outdir.mkdir(parents=True, exist_ok=True)
 

@@ -3,7 +3,9 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BIN="$HERE/bin"
+# plugin instalado: instala na pasta de dados, que sobrevive a atualizacoes
+DEST="$(python3 -B "$HERE/secscan.py" --home)"
+BIN="$DEST/bin"
 mkdir -p "$BIN"
 
 case "$(uname -s)" in
@@ -101,13 +103,13 @@ mv -f "$TMP/trivy" "$BIN/trivy"
 chmod +x "$BIN/trivy"
 
 echo "> semgrep (venv isolado)"
-python3 -m venv "$HERE/.venv"
-"$HERE/.venv/bin/python" -m pip install --quiet --upgrade pip
-"$HERE/.venv/bin/python" -m pip install --quiet semgrep
+python3 -m venv "$DEST/.venv"
+"$DEST/.venv/bin/python" -m pip install --quiet --upgrade pip
+"$DEST/.venv/bin/python" -m pip install --quiet semgrep
 
 echo "> pre-cache dos rulesets (permite rodar offline depois)"
 for pack in p/default p/nodejs p/python p/golang p/java p/ruby p/php p/rust p/csharp; do
-  if "$HERE/.venv/bin/semgrep" scan --config "$pack" --validate >/dev/null 2>&1; then
+  if "$DEST/.venv/bin/semgrep" scan --config "$pack" --validate >/dev/null 2>&1; then
     echo "  $pack"
   else
     echo "  aviso: $pack nao pode ser baixado agora (sera buscado na primeira execucao)" >&2
@@ -123,8 +125,8 @@ done
 
 chmod +x "$HERE/secscan.sh"
 echo ""
-echo "Instalado em: $HERE"
+echo "Instalado em: $DEST"
 "$BIN/gitleaks" version
 "$BIN/osv-scanner" --version | head -1
 "$BIN/trivy" --version | head -1
-"$HERE/.venv/bin/semgrep" --version
+"$DEST/.venv/bin/semgrep" --version

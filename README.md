@@ -68,8 +68,13 @@ Instalar como plugin (Claude Code 2.1.275 ou mais novo):
 /plugin install secscan --marketplace felixman255-droid/secscan
 ```
 
-O plugin fica numa pasta própria por versão: depois de instalar, e a cada versão nova, rodar o
-instalador descrito em **Instalação** dentro dessa pasta.
+Depois de instalar o plugin, rodar uma vez o instalador descrito em **Instalação** dentro da pasta
+do plugin. Atualizações não exigem reinstalar, salvo quando as versões fixas das ferramentas mudam
+(o parsing depende delas).
+
+Instalado como plugin, `bin/`, `.venv/`, `cache/` e os relatórios ficam na pasta de dados do plugin
+(`plugins/data/secscan-secscan/`), que sobrevive a atualizações e é removida ao desinstalar.
+`secscan.py --home` mostra qual é a pasta em uso.
 
 Instalar como skill (Claude Code):
 
@@ -440,7 +445,7 @@ regressão, mesmo que os testes continuem passando.
 |---|---|---|
 | **Versões fixas** | `install.ps1`/`install.sh` fixam gitleaks, osv-scanner, trivy e conferem o SHA-256 oficial antes de usar | subir versão sem revalidar o parsing (`unittest`) |
 | **Saída determinística** | parsing em funções puras; fingerprints por conteúdo, sem número de linha; baseline | usar heurística dependente de ordem ou de caminho absoluto |
-| **Isolamento hermético** | tudo em `bin/`, `.venv/`, `cache/` dentro da pasta da skill; `--cache-dir` local | deixar uma ferramenta escrever em `~/.cache` ou `%LOCALAPPDATA%` |
+| **Isolamento hermético** | tudo em `bin/`, `.venv/`, `cache/` dentro da pasta de instalação (a da skill; num plugin, a de dados dele); `--cache-dir` local | deixar uma ferramenta escrever em `~/.cache` ou `%LOCALAPPDATA%` |
 | **Paridade entre plataformas** | nenhuma camada depende de estado de cache do sistema | pré-aquecer cache de forma condicional (funciona num SO, falha em outro) |
 
 O caso mais sutil é a paridade. O trivy usa o bundle de checks **embutido no binário** porque o

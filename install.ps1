@@ -3,7 +3,11 @@
 $ErrorActionPreference = "Stop"
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-$bin  = Join-Path $here "bin"
+# plugin instalado: instala na pasta de dados, que sobrevive a atualizacoes
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$dest = (& python -B (Join-Path $here "secscan.py") --home | Select-Object -Last 1)
+if ($LASTEXITCODE -ne 0 -or -not $dest) { throw "nao consegui descobrir a pasta de instalacao (python no PATH?)" }
+$bin  = Join-Path $dest "bin"
 $tmp  = Join-Path $env:TEMP ("secscan-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $bin, $tmp | Out-Null
 
@@ -63,11 +67,11 @@ Expand-Archive -Path $trvZip -DestinationPath $tmp -Force
 Move-Item -Force (Join-Path $tmp "trivy.exe") (Join-Path $bin "trivy.exe")
 
 Write-Host "> semgrep (venv isolado)"
-& python -m venv (Join-Path $here ".venv")
-$py = Join-Path $here ".venv\Scripts\python.exe"
+& python -m venv (Join-Path $dest ".venv")
+$py = Join-Path $dest ".venv\Scripts\python.exe"
 & $py -m pip install --quiet --upgrade pip
 & $py -m pip install --quiet semgrep
-$semgrep = Join-Path $here ".venv\Scripts\semgrep.exe"
+$semgrep = Join-Path $dest ".venv\Scripts\semgrep.exe"
 
 Write-Host "> pre-cache dos rulesets (permite rodar offline depois)"
 foreach ($pack in @("p/default", "p/nodejs", "p/python", "p/golang",
@@ -87,7 +91,7 @@ foreach ($pack in @("p/default", "p/nodejs", "p/python", "p/golang",
 Remove-Item -Recurse -Force $tmp
 
 Write-Host ""
-Write-Host "Instalado em: $here"
+Write-Host "Instalado em: $dest"
 & (Join-Path $bin "gitleaks.exe") version
 & (Join-Path $bin "osv-scanner.exe") --version | Select-Object -First 1
 & (Join-Path $bin "trivy.exe") --version | Select-Object -First 1

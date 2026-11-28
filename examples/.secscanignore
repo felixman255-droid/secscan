@@ -1,0 +1,6 @@
+# secscan baseline - achados aceitos conscientemente.
+# formato: <fingerprint>  <ferramenta>  <regra>  <caminho>
+# remova uma linha para voltar a reportar o achado.
+
+353d4d8f48537cdc  trivy  DS-0026  Dockerfile
+776dd92f5f910e67  trivy  DS-0001  Dockerfile

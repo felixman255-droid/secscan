@@ -1,6 +1,6 @@
 {
   "name": "secscan",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Local security scan in one report: leaked secrets (gitleaks), vulnerable dependencies (osv-scanner), code analysis (semgrep) and infrastructure misconfiguration (trivy).",
   "author": { "name": "felixman255-droid" },
   "homepage": "https://github.com/felixman255-droid/secscan",
